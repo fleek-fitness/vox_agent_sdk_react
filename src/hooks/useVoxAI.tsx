@@ -223,7 +223,12 @@ export function useVoxAI(options: VoxAIOptions = {}) {
           options.onConnect();
         }
       } catch (err) {
+        // Reset state on error
+        setConnectionDetail(null);
+        setTranscriptMap(new Map());
+        setMessages([]);
         setState("disconnected");
+
         const error = err instanceof Error ? err : new Error(String(err));
 
         if (options.onError) {
@@ -259,6 +264,16 @@ export function useVoxAI(options: VoxAIOptions = {}) {
           video={false}
           connect={true}
           onDisconnected={disconnect}
+          // Add error handling for LiveKit connection
+          onError={(error) => {
+            console.error("LiveKit connection error:", error);
+            disconnect();
+            if (options.onError) {
+              options.onError(
+                new Error(`LiveKit connection error: ${error.message}`)
+              );
+            }
+          }}
         >
           <RoomAudioRenderer />
           <StateMonitor port={channelRef.current?.port2} />
@@ -267,7 +282,7 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     } else {
       rootRef.current.render(<></>);
     }
-  }, [connectionDetail, disconnect]);
+  }, [connectionDetail, disconnect, options.onError]);
 
   return {
     connect,
