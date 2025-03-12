@@ -1,0 +1,15 @@
+# Development files
+.eslintrc.json
+.browserslistrc
+jest.config.js
+tsconfig.json
+src/**/*.test.ts
+src/**/*.test.tsx
+
+# Build process
+.github
+node_modules
+
+# Misc
+.DS_Store
+*.log

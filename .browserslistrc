@@ -1,0 +1,10 @@
+[modern]
+chrome >= 60
+firefox >= 60
+safari >= 12
+edge >= 79
+
+[development]
+last 1 chrome version
+last 1 firefox version
+last 1 safari version 
