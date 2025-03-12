@@ -59,11 +59,11 @@ type TranscriptionSegment = {
   speaker: "agent" | "user";
 };
 
-// Update the connection parameter type to include metadata
+// Update the connection parameter type to include dynamicVariables
 interface ConnectParams {
   agentId: string;
   apiKey: string;
-  metadata?: Record<string, any>; // Allow any metadata fields
+  dynamicVariables?: Record<string, any>; // Allow any dynamicVariables fields
 }
 
 /**
@@ -187,9 +187,9 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     };
   }, []);
 
-  // Connect to VoxAI service - updated to include metadata
+  // Connect to VoxAI service - updated to include dynamicVariables
   const connect = useCallback(
-    async ({ agentId, apiKey, metadata }: ConnectParams) => {
+    async ({ agentId, apiKey, dynamicVariables }: ConnectParams) => {
       try {
         setState("connecting");
 
@@ -203,7 +203,7 @@ export function useVoxAI(options: VoxAIOptions = {}) {
             agent_id: agentId,
             metadata: {
               call_web: {
-                dynamic_variables: metadata || {},
+                dynamic_variables: dynamicVariables || {},
               },
             },
           }),
