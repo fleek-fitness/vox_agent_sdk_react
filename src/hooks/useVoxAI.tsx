@@ -10,7 +10,6 @@ import { Track } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot, Root } from "react-dom/client";
 
-// Connection types
 type VoxConnectionDetail = {
   serverUrl: string;
   roomName: string;
@@ -18,7 +17,11 @@ type VoxConnectionDetail = {
   participantToken: string;
 };
 
-type VoxAgentState =
+/**
+ * VoxAgentState
+ * @description The state of the agent
+ */
+export type VoxAgentState =
   | "disconnected"
   | "connecting"
   | "initializing"
@@ -30,6 +33,10 @@ type VoxAgentState =
 const HTTPS_API_ORIGIN = "https://www.tryvox.co/api/agent/sdk";
 // const HTTPS_API_ORIGIN = "http://localhost:3000/api/agent/sdk";
 
+/**
+ * VoxMessage
+ * @description The message type between the agent and the user
+ */
 export type VoxMessage = {
   id?: string;
   name: "agent" | "user" | "tool";
@@ -38,8 +45,11 @@ export type VoxMessage = {
   isFinal?: boolean;
 };
 
-// Hook configuration
-interface VoxAIOptions {
+/**
+ * VoxAIOptions
+ * @description The callback functions for the useVoxAI hook
+ */
+export interface VoxAIOptions {
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (error: Error) => void;
@@ -59,15 +69,32 @@ type TranscriptionSegment = {
   speaker: "agent" | "user";
 };
 
-// Update the connection parameter type to include dynamicVariables
-interface ConnectParams {
+/**
+ * ConnectParams
+ * @param agentId - The agent ID
+ * @param apiKey - The API key
+ * @param dynamicVariables - The dynamic variables
+ * @param metadata - 이 메타데이터는 아웃바운드 웹훅, 통화 기록에 포함됩니다.
+ */
+export interface ConnectParams {
   agentId: string;
   apiKey: string;
-  dynamicVariables?: Record<string, any>; // Allow any dynamicVariables fields
+  dynamicVariables?: Record<string, any>;
+  metadata?: Record<string, any>;
 }
 
 /**
- * Hook for integrating with VoxAI voice assistant
+ * useVoxAI
+ * @description The hook for integrating with vox.ai voice assistant
+ * @param options - The options for the useVoxAI hook
+ * @returns The useVoxAI hook
+ * @example
+ * const { connect, disconnect, state, messages } = useVoxAI({
+ *   onConnect: () => console.log("Connected"),
+ *   onDisconnect: () => console.log("Disconnected"),
+ *   onError: (error) => console.error("Error:", error),
+ *   onMessage: (message) => console.log("Message:", message),
+ * });
  */
 export function useVoxAI(options: VoxAIOptions = {}) {
   // Connection state
@@ -189,7 +216,7 @@ export function useVoxAI(options: VoxAIOptions = {}) {
 
   // Connect to VoxAI service - updated to include dynamicVariables
   const connect = useCallback(
-    async ({ agentId, apiKey, dynamicVariables }: ConnectParams) => {
+    async ({ agentId, apiKey, dynamicVariables, metadata }: ConnectParams) => {
       try {
         setState("connecting");
 
@@ -204,6 +231,7 @@ export function useVoxAI(options: VoxAIOptions = {}) {
             metadata: {
               call_web: {
                 dynamic_variables: dynamicVariables || {},
+                metadata: metadata || {},
               },
             },
           }),

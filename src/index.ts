@@ -4,3 +4,9 @@
  */
 
 export { useVoxAI } from "./hooks";
+export type {
+  VoxAgentState,
+  VoxMessage,
+  VoxAIOptions,
+  ConnectParams,
+} from "./hooks";
