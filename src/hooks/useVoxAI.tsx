@@ -5,6 +5,7 @@ import {
   useParticipantTracks,
   useTrackTranscription,
   useVoiceAssistant,
+  useChat,
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -89,7 +90,7 @@ export interface ConnectParams {
  * @param options - The options for the useVoxAI hook
  * @returns The useVoxAI hook
  * @example
- * const { connect, disconnect, state, messages } = useVoxAI({
+ * const { connect, disconnect, state, messages, send } = useVoxAI({
  *   onConnect: () => console.log("Connected"),
  *   onDisconnect: () => console.log("Disconnected"),
  *   onError: (error) => console.error("Error:", error),
@@ -118,6 +119,9 @@ export function useVoxAI(options: VoxAIOptions = {}) {
 
   // Communication channel
   const channelRef = useRef<MessageChannel | null>(null);
+
+  // Add this near the start of your useVoxAI hook
+  const livekitComponentRef = useRef<React.ReactNode>(null);
 
   // Update messages whenever transcriptMap changes
   useEffect(() => {
@@ -152,10 +156,11 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     }
   }, [transcriptMap, options.onMessage]);
 
-  // Initialize message channel
+  // Initialize message channel - ensure ports are properly connected
   useEffect(() => {
-    channelRef.current = new MessageChannel();
-    channelRef.current.port1.onmessage = (e) => {
+    const channel = new MessageChannel();
+
+    channel.port1.onmessage = (e) => {
       const data = e.data as MessageChannelEvent;
 
       if (data.type === "state_update") {
@@ -165,8 +170,13 @@ export function useVoxAI(options: VoxAIOptions = {}) {
       }
     };
 
+    // Store the channel reference
+    channelRef.current = channel;
+
     return () => {
       channelRef.current?.port1.close();
+      channelRef.current?.port2.close();
+      channelRef.current = null;
     };
   }, []);
 
@@ -279,35 +289,91 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     }
   }, [options]);
 
-  // Render LiveKit components when connection details are available
+  // Update the send function with debugging and error checking
+  const send = useCallback(
+    ({ message, digit }: { message?: string; digit?: number }) => {
+      if (state === "disconnected") {
+        console.warn("Cannot send message: Not connected to a conversation");
+        return;
+      }
+
+      if (message) {
+        // Add the message to our local transcript map for immediate feedback
+        const messageId = `user-text-${Date.now()}`;
+        setTranscriptMap((prevMap) => {
+          const newMap = new Map(prevMap);
+          newMap.set(messageId, {
+            id: messageId,
+            name: "user",
+            message: message,
+            timestamp: Date.now(),
+            isFinal: true,
+          });
+          return newMap;
+        });
+
+        // Send message through the message channel to StateMonitor
+        if (channelRef.current) {
+          channelRef.current.port1.postMessage({
+            type: "send_text",
+            text: message,
+          });
+        } else {
+          console.error("No message channel available to send message");
+        }
+      }
+
+      if (digit !== undefined) {
+        // Send DTMF through the message channel to StateMonitor
+        if (channelRef.current) {
+          channelRef.current.port1.postMessage({
+            type: "send_dtmf",
+            digit: digit,
+          });
+        } else {
+          console.error("No message channel available to send DTMF");
+        }
+      }
+    },
+    [state]
+  );
+
+  // Modify the useEffect hook that renders the LiveKit component
   useEffect(() => {
     if (!rootRef.current) return;
 
     if (connectionDetail) {
-      rootRef.current.render(
-        <LiveKitRoom
-          serverUrl={connectionDetail.serverUrl}
-          token={connectionDetail.participantToken}
-          audio={true}
-          video={false}
-          connect={true}
-          onDisconnected={disconnect}
-          // Add error handling for LiveKit connection
-          onError={(error) => {
-            console.error("LiveKit connection error:", error);
-            disconnect();
-            if (options.onError) {
-              options.onError(
-                new Error(`LiveKit connection error: ${error.message}`)
-              );
-            }
-          }}
-        >
-          <RoomAudioRenderer />
-          <StateMonitor port={channelRef.current?.port2} />
-        </LiveKitRoom>
-      );
+      // Only create a new LiveKit component if we don't have one or connection details changed
+      if (!livekitComponentRef.current) {
+        livekitComponentRef.current = (
+          <LiveKitRoom
+            serverUrl={connectionDetail.serverUrl}
+            token={connectionDetail.participantToken}
+            audio={true}
+            video={false}
+            connect={true}
+            onDisconnected={disconnect}
+            onError={(error) => {
+              console.error("LiveKit connection error:", error);
+              disconnect();
+              if (options.onError) {
+                options.onError(
+                  new Error(`LiveKit connection error: ${error.message}`)
+                );
+              }
+            }}
+          >
+            <RoomAudioRenderer />
+            {channelRef.current && (
+              <StateMonitor port={channelRef.current.port2} />
+            )}
+          </LiveKitRoom>
+        );
+      }
+
+      rootRef.current.render(livekitComponentRef.current);
     } else {
+      livekitComponentRef.current = null;
       rootRef.current.render(<></>);
     }
   }, [connectionDetail, disconnect, options.onError]);
@@ -317,6 +383,7 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     disconnect,
     state,
     messages,
+    send,
   };
 }
 
@@ -325,6 +392,7 @@ export function useVoxAI(options: VoxAIOptions = {}) {
  */
 function StateMonitor({ port }: { port: MessagePort | undefined }) {
   const { agent, state } = useVoiceAssistant();
+  const { send: sendChat } = useChat();
 
   // Agent transcriptions
   const agentAudioTrack = useParticipantTracks(
@@ -383,6 +451,46 @@ function StateMonitor({ port }: { port: MessagePort | undefined }) {
       });
     }
   }, [localMessages.segments, port]);
+
+  // Listen for messages from the main component
+  useEffect(() => {
+    if (!port) {
+      console.error("No message port available in StateMonitor");
+      return;
+    }
+
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data;
+
+      if (data.type === "send_text") {
+        if (sendChat) {
+          sendChat(data.text);
+        } else {
+          console.error("sendChat function is not available");
+        }
+      } else if (data.type === "send_dtmf") {
+        if (localParticipant.localParticipant) {
+          // Use standard DTMF code (RFC 4733)
+          const standardDtmfCode = 101; // Standard DTMF payload type
+          localParticipant.localParticipant.publishDtmf(
+            standardDtmfCode,
+            data.digit
+          );
+        } else {
+          console.error("Local participant is not available for DTMF");
+        }
+      }
+    };
+
+    // Make sure to start the port
+    port.start();
+
+    port.addEventListener("message", handleMessage);
+
+    return () => {
+      port.removeEventListener("message", handleMessage);
+    };
+  }, [port, sendChat, localParticipant]);
 
   return null;
 }
