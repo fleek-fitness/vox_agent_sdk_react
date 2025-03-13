@@ -7,6 +7,7 @@ import {
   useVoiceAssistant,
   useChat,
   useAudioWaveform,
+  useDataChannel,
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -36,6 +37,35 @@ const HTTPS_API_ORIGIN = "https://www.tryvox.co/api/agent/sdk";
 // const HTTPS_API_ORIGIN = "http://localhost:3000/api/agent/sdk";
 
 /**
+ * Function call related types
+ */
+export interface FunctionCallInfo {
+  tool_call_id: string;
+  function_info: {
+    name: string;
+    description: string;
+    arguments: Record<string, any>;
+  };
+  raw_arguments: string;
+  arguments: Record<string, any>;
+}
+
+export interface FunctionCallResult {
+  call_info: {
+    tool_call_id: string;
+    function_info: {
+      name: string;
+      description: string;
+      arguments: Record<string, any>;
+    };
+    raw_arguments: string;
+    arguments: Record<string, any>;
+  };
+  result: Record<string, any> | null;
+  exception: string | null;
+}
+
+/**
  * VoxMessage
  * @description The message type between the agent and the user
  */
@@ -45,6 +75,8 @@ export type VoxMessage = {
   message?: string;
   timestamp: number;
   isFinal?: boolean;
+  toolCalls?: FunctionCallInfo[];
+  toolCallResults?: FunctionCallResult[];
 };
 
 /**
@@ -66,7 +98,9 @@ type MessageChannelEvent =
       type: "waveform_update";
       waveformData: number[];
       speaker: "agent" | "user";
-    };
+    }
+  | { type: "function_calls_collected"; functionCalls: FunctionCallInfo[] }
+  | { type: "function_calls_finished"; functionResults: FunctionCallResult[] };
 
 type TranscriptionSegment = {
   id: string;
@@ -194,6 +228,40 @@ export function useVoxAI(options: VoxAIOptions = {}) {
           ...prevMap,
           [data.speaker]: data.waveformData,
         }));
+      } else if (
+        data.type === "function_calls_collected" &&
+        data.functionCalls
+      ) {
+        // Handle function calls
+        const functionCallsId = `function-calls-${Date.now()}`;
+        setTranscriptMap((prevMap) => {
+          const newMap = new Map(prevMap);
+          newMap.set(functionCallsId, {
+            id: functionCallsId,
+            name: "tool",
+            toolCalls: data.functionCalls,
+            timestamp: Date.now(),
+            isFinal: true,
+          });
+          return newMap;
+        });
+      } else if (
+        data.type === "function_calls_finished" &&
+        data.functionResults
+      ) {
+        // Handle function results
+        const functionResultsId = `function-results-${Date.now()}`;
+        setTranscriptMap((prevMap) => {
+          const newMap = new Map(prevMap);
+          newMap.set(functionResultsId, {
+            id: functionResultsId,
+            name: "tool",
+            toolCallResults: data.functionResults,
+            timestamp: Date.now(),
+            isFinal: true,
+          });
+          return newMap;
+        });
       }
     };
 
@@ -630,6 +698,60 @@ function StateMonitor({
       });
     }
   }, [localMessages.segments, port]);
+
+  // Add data channel hook for function calls
+  const { message: functionCallsCollected } = useDataChannel(
+    "function_calls_collected",
+    (msg) => {
+      if (!port) return;
+
+      const textDecoder = new TextDecoder();
+      const messageString =
+        msg.payload instanceof Uint8Array
+          ? textDecoder.decode(msg.payload)
+          : String(msg.payload);
+
+      let functionCallInfo: FunctionCallInfo[];
+      try {
+        functionCallInfo = JSON.parse(messageString);
+
+        // Send function calls to main hook via the port
+        port.postMessage({
+          type: "function_calls_collected",
+          functionCalls: functionCallInfo,
+        });
+      } catch (e) {
+        console.error("Failed to parse function call log:", e);
+      }
+    }
+  );
+
+  // Add data channel hook for function call results
+  const { message: functionCallsFinished } = useDataChannel(
+    "function_calls_finished",
+    (msg) => {
+      if (!port) return;
+
+      const textDecoder = new TextDecoder();
+      const messageString =
+        msg.payload instanceof Uint8Array
+          ? textDecoder.decode(msg.payload)
+          : String(msg.payload);
+
+      let functionCallResult: FunctionCallResult[];
+      try {
+        functionCallResult = JSON.parse(messageString);
+
+        // Send function results to main hook via the port
+        port.postMessage({
+          type: "function_calls_finished",
+          functionResults: functionCallResult,
+        });
+      } catch (e) {
+        console.error("Failed to parse function call result:", e);
+      }
+    }
+  );
 
   return null;
 }
