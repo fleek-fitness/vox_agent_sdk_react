@@ -6,6 +6,7 @@ import {
   useTrackTranscription,
   useVoiceAssistant,
   useChat,
+  useAudioWaveform,
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -60,7 +61,12 @@ export interface VoxAIOptions {
 // Message channel event types
 type MessageChannelEvent =
   | { type: "state_update"; state: VoxAgentState }
-  | { type: "transcription_update"; transcriptions: TranscriptionSegment[] };
+  | { type: "transcription_update"; transcriptions: TranscriptionSegment[] }
+  | {
+      type: "waveform_update";
+      waveformData: number[];
+      speaker: "agent" | "user";
+    };
 
 type TranscriptionSegment = {
   id: string;
@@ -123,6 +129,21 @@ export function useVoxAI(options: VoxAIOptions = {}) {
   // Add this near the start of your useVoxAI hook
   const livekitComponentRef = useRef<React.ReactNode>(null);
 
+  // Replace the single waveform state with a map for multiple speakers
+  const [waveformDataMap, setWaveformDataMap] = useState<
+    Record<string, number[]>
+  >({
+    agent: [],
+    user: [],
+  });
+
+  // Add back the waveform config reference
+  const waveformConfigRef = useRef<{
+    speaker?: "agent" | "user";
+    barCount: number;
+    updateInterval: number;
+  } | null>(null);
+
   // Update messages whenever transcriptMap changes
   useEffect(() => {
     const allMessages = Array.from(transcriptMap.values()).sort(
@@ -167,8 +188,17 @@ export function useVoxAI(options: VoxAIOptions = {}) {
         setState(data.state);
       } else if (data.type === "transcription_update") {
         handleTranscriptionUpdate(data.transcriptions);
+      } else if (data.type === "waveform_update" && data.speaker) {
+        // Store the waveform data for the specific speaker
+        setWaveformDataMap((prevMap) => ({
+          ...prevMap,
+          [data.speaker]: data.waveformData,
+        }));
       }
     };
+
+    // Start the port
+    channel.port1.start();
 
     // Store the channel reference
     channelRef.current = channel;
@@ -338,6 +368,39 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     [state]
   );
 
+  // Update the audioWaveform function to return data for the requested speaker
+  const audioWaveform = useCallback(
+    ({
+      speaker = "agent",
+      barCount = 10,
+      updateInterval = 20,
+    }: {
+      speaker?: "agent" | "user";
+      barCount?: number;
+      updateInterval?: number;
+    }): number[] => {
+      // Store the waveform configuration for StateMonitor to use
+      waveformConfigRef.current = { speaker, barCount, updateInterval };
+
+      // Send the configuration to StateMonitor if channel is available
+      if (channelRef.current) {
+        channelRef.current.port1.postMessage({
+          type: "waveform_config",
+          config: { speaker, barCount, updateInterval },
+        });
+      }
+
+      // Get the waveform data for the requested speaker
+      const speakerData = waveformDataMap[speaker] || [];
+
+      // Return the current waveform data, or a default array if no data yet
+      return speakerData.length > 0
+        ? speakerData.slice(0, barCount) // Ensure we return only barCount items
+        : Array(barCount).fill(0);
+    },
+    [waveformDataMap]
+  );
+
   // Modify the useEffect hook that renders the LiveKit component
   useEffect(() => {
     if (!rootRef.current) return;
@@ -345,6 +408,11 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     if (connectionDetail) {
       // Only create a new LiveKit component if we don't have one or connection details changed
       if (!livekitComponentRef.current) {
+        if (channelRef.current) {
+          // Start port2 before passing it to StateMonitor
+          channelRef.current.port2.start();
+        }
+
         livekitComponentRef.current = (
           <LiveKitRoom
             serverUrl={connectionDetail.serverUrl}
@@ -365,7 +433,15 @@ export function useVoxAI(options: VoxAIOptions = {}) {
           >
             <RoomAudioRenderer />
             {channelRef.current && (
-              <StateMonitor port={channelRef.current.port2} />
+              <StateMonitor
+                port={channelRef.current.port2}
+                initialConfig={
+                  waveformConfigRef.current || {
+                    barCount: 10,
+                    updateInterval: 20,
+                  }
+                }
+              />
             )}
           </LiveKitRoom>
         );
@@ -384,15 +460,33 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     state,
     messages,
     send,
+    audioWaveform,
   };
 }
 
 /**
  * Component that monitors LiveKit state and communicates back to the main hook
  */
-function StateMonitor({ port }: { port: MessagePort | undefined }) {
+function StateMonitor({
+  port,
+  initialConfig,
+}: {
+  port: MessagePort | undefined;
+  initialConfig: {
+    speaker?: "agent" | "user";
+    barCount: number;
+    updateInterval: number;
+  };
+}) {
   const { agent, state } = useVoiceAssistant();
   const { send: sendChat } = useChat();
+
+  // Initialize waveform config with the passed initial values, defaulting to "agent" if not specified
+  const [waveformConfig, setWaveformConfig] = useState({
+    speaker: initialConfig.speaker || "agent",
+    barCount: initialConfig.barCount,
+    updateInterval: initialConfig.updateInterval,
+  });
 
   // Agent transcriptions
   const agentAudioTrack = useParticipantTracks(
@@ -401,6 +495,14 @@ function StateMonitor({ port }: { port: MessagePort | undefined }) {
   )[0];
   const agentTranscription = useTrackTranscription(agentAudioTrack);
 
+  // Use the current config for the waveform, applying different settings based on speaker
+  const agentAudioWaveform = useAudioWaveform(agentAudioTrack, {
+    barCount:
+      waveformConfig.speaker === "agent" ? waveformConfig.barCount : 120, // default if not the selected speaker
+    updateInterval:
+      waveformConfig.speaker === "agent" ? waveformConfig.updateInterval : 20,
+  });
+
   // User transcriptions
   const localParticipant = useLocalParticipant();
   const localMessages = useTrackTranscription({
@@ -408,6 +510,83 @@ function StateMonitor({ port }: { port: MessagePort | undefined }) {
     source: Track.Source.Microphone,
     participant: localParticipant.localParticipant,
   });
+  const localAudioTrack = useParticipantTracks(
+    [Track.Source.Microphone],
+    localParticipant.localParticipant.identity
+  )[0];
+  const userAudioWaveform = useAudioWaveform(localAudioTrack, {
+    barCount: waveformConfig.speaker === "user" ? waveformConfig.barCount : 120, // default if not the selected speaker
+    updateInterval:
+      waveformConfig.speaker === "user" ? waveformConfig.updateInterval : 20,
+  });
+
+  // Add separate effects to send agent and user waveform data
+  useEffect(() => {
+    if (!port || !agentAudioWaveform || !agentAudioWaveform.bars) return;
+
+    // Send the agent waveform data
+    port.postMessage({
+      type: "waveform_update",
+      waveformData: agentAudioWaveform.bars,
+      speaker: "agent",
+    });
+  }, [port, agentAudioWaveform]);
+
+  useEffect(() => {
+    if (!port || !userAudioWaveform || !userAudioWaveform.bars) return;
+
+    // Send the user waveform data
+    port.postMessage({
+      type: "waveform_update",
+      waveformData: userAudioWaveform.bars,
+      speaker: "user",
+    });
+  }, [port, userAudioWaveform]);
+
+  // Listen for messages including config updates
+  useEffect(() => {
+    if (!port) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data;
+
+      if (data.type === "waveform_config" && data.config) {
+        // Verify we have both required properties before updating
+        if (
+          typeof data.config.barCount === "number" &&
+          typeof data.config.updateInterval === "number"
+        ) {
+          setWaveformConfig(data.config);
+        }
+      } else if (data.type === "send_text") {
+        if (sendChat) {
+          sendChat(data.text);
+        } else {
+          console.error("sendChat function is not available");
+        }
+      } else if (data.type === "send_dtmf") {
+        if (localParticipant.localParticipant) {
+          // Use standard DTMF code (RFC 4733)
+          const standardDtmfCode = 101; // Standard DTMF payload type
+          localParticipant.localParticipant.publishDtmf(
+            standardDtmfCode,
+            data.digit
+          );
+        } else {
+          console.error("Local participant is not available for DTMF");
+        }
+      }
+    };
+
+    // Make sure we start the port
+    port.start();
+
+    port.addEventListener("message", handleMessage);
+
+    return () => {
+      port.removeEventListener("message", handleMessage);
+    };
+  }, [port, sendChat, localParticipant]);
 
   // Send agent state updates
   useEffect(() => {
@@ -451,46 +630,6 @@ function StateMonitor({ port }: { port: MessagePort | undefined }) {
       });
     }
   }, [localMessages.segments, port]);
-
-  // Listen for messages from the main component
-  useEffect(() => {
-    if (!port) {
-      console.error("No message port available in StateMonitor");
-      return;
-    }
-
-    const handleMessage = (event: MessageEvent) => {
-      const data = event.data;
-
-      if (data.type === "send_text") {
-        if (sendChat) {
-          sendChat(data.text);
-        } else {
-          console.error("sendChat function is not available");
-        }
-      } else if (data.type === "send_dtmf") {
-        if (localParticipant.localParticipant) {
-          // Use standard DTMF code (RFC 4733)
-          const standardDtmfCode = 101; // Standard DTMF payload type
-          localParticipant.localParticipant.publishDtmf(
-            standardDtmfCode,
-            data.digit
-          );
-        } else {
-          console.error("Local participant is not available for DTMF");
-        }
-      }
-    };
-
-    // Make sure to start the port
-    port.start();
-
-    port.addEventListener("message", handleMessage);
-
-    return () => {
-      port.removeEventListener("message", handleMessage);
-    };
-  }, [port, sendChat, localParticipant]);
 
   return null;
 }
