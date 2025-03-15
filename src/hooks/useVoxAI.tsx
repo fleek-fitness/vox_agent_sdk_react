@@ -9,7 +9,8 @@ import {
   useAudioWaveform,
   useDataChannel,
 } from "@livekit/components-react";
-import { Track } from "livekit-client";
+import { KrispNoiseFilter } from "@livekit/krisp-noise-filter";
+import { LocalAudioTrack, Track } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot, Root } from "react-dom/client";
 
@@ -587,6 +588,22 @@ function StateMonitor({
     updateInterval:
       waveformConfig.speaker === "user" ? waveformConfig.updateInterval : 20,
   });
+
+  // Apply Krisp noise cancellation to the local microphone track
+  useEffect(() => {
+    const applyKrispNoiseFilter = async () => {
+      const track = localParticipant.microphoneTrack?.track;
+      if (track && track instanceof LocalAudioTrack) {
+        try {
+          await track.setProcessor(KrispNoiseFilter());
+        } catch (error) {
+          console.error("Failed to enable Krisp noise cancellation:", error);
+        }
+      }
+    };
+
+    applyKrispNoiseFilter();
+  }, [localParticipant.microphoneTrack]);
 
   // Add separate effects to send agent and user waveform data
   useEffect(() => {
