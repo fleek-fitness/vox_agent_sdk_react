@@ -325,9 +325,31 @@ export function useVoxAI(options: VoxAIOptions = {}) {
   }, []);
 
   // Connect to VoxAI service - updated to include dynamicVariables
+  /**
+   * Initiates a connection to the VoxAI service
+   * @param {ConnectParams} options - Connection parameters
+   * @returns {Promise} - Resolves when the connection is successful, rejects if:
+   *   1. The connection is already in progress (state is not "disconnected")
+   *   2. The server returns an error
+   *   3. Any other error occurs during the connection process
+   */
   const connect = useCallback(
     async ({ agentId, apiKey, dynamicVariables, metadata }: ConnectParams) => {
       try {
+        // Prevent connecting if already in a connection state
+        if (state !== "disconnected") {
+          const errorMessage = `Connection attempt rejected: Already in a connection state (${state})`;
+          console.warn(errorMessage);
+
+          // Call the onError callback if provided
+          if (options.onError) {
+            options.onError(new Error(errorMessage));
+          }
+
+          // Return a rejected promise
+          return Promise.reject(new Error(errorMessage));
+        }
+
         setState("connecting");
 
         const response = await fetch(HTTPS_API_ORIGIN, {
@@ -527,6 +549,16 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     }
   }, [connectionDetail, disconnect, options.onError]);
 
+  /**
+   * Returns the VoxAI interface for controlling the conversation
+   * @returns {Object} VoxAI interface
+   * @property {Function} connect - Initiates a connection to the VoxAI service. Will reject with an error if already connected or in the process of connecting.
+   * @property {Function} disconnect - Terminates the connection to the VoxAI service.
+   * @property {VoxAgentState} state - The current state of the agent.
+   * @property {VoxMessage[]} messages - An array of messages exchanged in the conversation.
+   * @property {Function} send - Sends a message or DTMF digit to the agent.
+   * @property {Function} audioWaveform - Returns audio waveform data for UI visualization.
+   */
   return {
     connect,
     disconnect,
