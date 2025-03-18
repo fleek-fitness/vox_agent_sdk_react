@@ -89,6 +89,7 @@ export interface VoxAIOptions {
   onDisconnect?: () => void;
   onError?: (error: Error) => void;
   onMessage?: (message: VoxMessage) => void;
+  enableNoiseCancellation?: boolean;
 }
 
 // Message channel event types
@@ -510,6 +511,9 @@ export function useVoxAI(options: VoxAIOptions = {}) {
                     updateInterval: 20,
                   }
                 }
+                enableNoiseCancellation={
+                  options.enableNoiseCancellation ?? true
+                }
               />
             )}
           </LiveKitRoom>
@@ -539,6 +543,7 @@ export function useVoxAI(options: VoxAIOptions = {}) {
 function StateMonitor({
   port,
   initialConfig,
+  enableNoiseCancellation = true,
 }: {
   port: MessagePort | undefined;
   initialConfig: {
@@ -546,6 +551,7 @@ function StateMonitor({
     barCount: number;
     updateInterval: number;
   };
+  enableNoiseCancellation?: boolean;
 }) {
   const { agent, state } = useVoiceAssistant();
   const { send: sendChat } = useChat();
@@ -595,15 +601,21 @@ function StateMonitor({
       const track = localParticipant.microphoneTrack?.track;
       if (track && track instanceof LocalAudioTrack) {
         try {
-          await track.setProcessor(KrispNoiseFilter());
+          // Only apply noise filter if enabled
+          if (enableNoiseCancellation) {
+            await track.setProcessor(KrispNoiseFilter());
+          } else {
+            // Remove any existing processor if noise cancellation is disabled
+            await track.stopProcessor();
+          }
         } catch (error) {
-          console.error("Failed to enable Krisp noise cancellation:", error);
+          console.error("Failed to set audio processor:", error);
         }
       }
     };
 
     applyKrispNoiseFilter();
-  }, [localParticipant.microphoneTrack]);
+  }, [localParticipant.microphoneTrack, enableNoiseCancellation]);
 
   // Add separate effects to send agent and user waveform data
   useEffect(() => {
