@@ -8,6 +8,7 @@ import {
   useChat,
   useAudioWaveform,
   useDataChannel,
+  useTrackVolume,
 } from "@livekit/components-react";
 import { KrispNoiseFilter } from "@livekit/krisp-noise-filter";
 import { LocalAudioTrack, Track } from "livekit-client";
@@ -514,6 +515,22 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     [options]
   );
 
+  // Add setVolume function that will be exposed in the hook's return value
+  const setVolume = useCallback((volume: number) => {
+    // Validate volume (0-1 range)
+    const validVolume = Math.min(Math.max(volume, 0), 1);
+
+    // Send the command to the StateMonitor through the message channel
+    if (channelRef.current) {
+      channelRef.current.port1.postMessage({
+        type: "set_volume",
+        volume: validVolume,
+      });
+    } else {
+      console.error("No message channel available to set volume");
+    }
+  }, []);
+
   // Modify the useEffect hook that renders the LiveKit component
   useEffect(() => {
     if (!rootRef.current) return;
@@ -580,6 +597,7 @@ export function useVoxAI(options: VoxAIOptions = {}) {
    * @property {Function} send - Sends a message or DTMF digit to the agent.
    * @property {Function} audioWaveform - Returns audio waveform data for UI visualization.
    * @property {Function} toggleMic - Toggles the microphone on/off.
+   * @property {Function} setVolume - Sets the volume of the agent's audio (0-1).
    */
   return {
     connect,
@@ -589,6 +607,7 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     send,
     audioWaveform,
     toggleMic,
+    setVolume,
   };
 }
 
@@ -741,6 +760,22 @@ function StateMonitor({
         } else {
           console.error("Local participant is not available for mic toggle");
         }
+      } else if (
+        data.type === "set_volume" &&
+        typeof data.volume === "number"
+      ) {
+        // Handle volume control
+        if (agent) {
+          // The agent is a RemoteParticipant, so we can call setVolume directly
+          try {
+            agent.setVolume(data.volume);
+            console.log(`Set agent volume to ${data.volume}`);
+          } catch (error) {
+            console.error("Failed to set agent volume:", error);
+          }
+        } else {
+          console.error("Agent is not available for volume control");
+        }
       }
     };
 
@@ -752,7 +787,7 @@ function StateMonitor({
     return () => {
       port.removeEventListener("message", handleMessage);
     };
-  }, [port, sendChat, localParticipant]);
+  }, [port, sendChat, localParticipant, agent]);
 
   // Send agent state updates
   useEffect(() => {
