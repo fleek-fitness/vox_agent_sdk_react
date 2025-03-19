@@ -180,6 +180,9 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     updateInterval: number;
   } | null>(null);
 
+  // Add a new state to track microphone status
+  const [isMicEnabled, setIsMicEnabled] = useState<boolean>(true);
+
   // Update messages whenever transcriptMap changes
   useEffect(() => {
     const allMessages = Array.from(transcriptMap.values()).sort(
@@ -493,6 +496,24 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     [waveformDataMap]
   );
 
+  // Add toggleMic function that will be exposed in the hook's return value
+  const toggleMic = useCallback(
+    (value: boolean) => {
+      setIsMicEnabled(value);
+
+      // Send the command to the StateMonitor through the message channel
+      if (channelRef.current) {
+        channelRef.current.port1.postMessage({
+          type: "toggle_mic",
+          enabled: value,
+        });
+      } else {
+        console.error("No message channel available to toggle microphone");
+      }
+    },
+    [options]
+  );
+
   // Modify the useEffect hook that renders the LiveKit component
   useEffect(() => {
     if (!rootRef.current) return;
@@ -558,6 +579,7 @@ export function useVoxAI(options: VoxAIOptions = {}) {
    * @property {VoxMessage[]} messages - An array of messages exchanged in the conversation.
    * @property {Function} send - Sends a message or DTMF digit to the agent.
    * @property {Function} audioWaveform - Returns audio waveform data for UI visualization.
+   * @property {Function} toggleMic - Toggles the microphone on/off.
    */
   return {
     connect,
@@ -566,6 +588,7 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     messages,
     send,
     audioWaveform,
+    toggleMic,
   };
 }
 
@@ -672,7 +695,7 @@ function StateMonitor({
     });
   }, [port, userAudioWaveform]);
 
-  // Listen for messages including config updates
+  // Listen for messages including config updates and mic toggle commands
   useEffect(() => {
     if (!port) return;
 
@@ -703,6 +726,20 @@ function StateMonitor({
           );
         } else {
           console.error("Local participant is not available for DTMF");
+        }
+      } else if (
+        data.type === "toggle_mic" &&
+        typeof data.enabled === "boolean"
+      ) {
+        // Handle microphone toggle
+        if (localParticipant.localParticipant) {
+          localParticipant.localParticipant
+            .setMicrophoneEnabled(data.enabled)
+            .catch((error) => {
+              console.error("Failed to toggle microphone:", error);
+            });
+        } else {
+          console.error("Local participant is not available for mic toggle");
         }
       }
     };
