@@ -1,6 +1,6 @@
 {
   "name": "@vox-ai/react",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "description": "vox.ai React Library",
   "main": "./dist/lib.umd.js",
   "module": "./dist/lib.module.js",
@@ -31,14 +31,12 @@
   },
   "dependencies": {
     "@livekit/components-react": "^2.8.1",
-    "@livekit/krisp-noise-filter": "^0.2.16",
     "livekit-client": "^2.9.5"
   },
   "peerDependencies": {
     "react": ">=16.8.0",
     "react-dom": ">=16.8.0",
     "@livekit/components-react": "^2.8.1",
-    "@livekit/krisp-noise-filter": "^0.2.16",
     "livekit-client": "^2.9.5"
   },
   "devDependencies": {
