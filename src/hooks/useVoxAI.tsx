@@ -143,6 +143,9 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     useState<VoxConnectionDetail | null>(null);
   const [state, setState] = useState<VoxAgentState>("disconnected");
 
+  // Session timestamp to filter out stale asynchronous events
+  const sessionTimestampRef = useRef<number>(Date.now());
+
   // Message handling
   const [transcriptMap, setTranscriptMap] = useState<Map<string, VoxMessage>>(
     new Map()
@@ -281,13 +284,17 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     };
   }, []);
 
-  // Process incoming transcriptions
+  // Process incoming transcriptions and filter out stale events
   const handleTranscriptionUpdate = useCallback(
     (transcriptions: TranscriptionSegment[]) => {
       setTranscriptMap((prevMap) => {
         const newMap = new Map(prevMap);
 
         transcriptions.forEach((t) => {
+          // Only process transcriptions generated after the current session timestamp
+          if (t.timestamp < sessionTimestampRef.current) {
+            return;
+          }
           const messageType = t.speaker === "agent" ? "agent" : "user";
           // Use existing timestamp if we already have this segment
           const existingTimestamp = prevMap.get(t.id)?.timestamp || t.timestamp;
@@ -326,14 +333,6 @@ export function useVoxAI(options: VoxAIOptions = {}) {
   }, []);
 
   // Connect to VoxAI service - updated to include dynamicVariables
-  /**
-   * Initiates a connection to the VoxAI service
-   * @param {ConnectParams} options - Connection parameters
-   * @returns {Promise} - Resolves when the connection is successful, rejects if:
-   *   1. The connection is already in progress (state is not "disconnected")
-   *   2. The server returns an error
-   *   3. Any other error occurs during the connection process
-   */
   const connect = useCallback(
     async ({ agentId, apiKey, dynamicVariables, metadata }: ConnectParams) => {
       try {
@@ -342,15 +341,14 @@ export function useVoxAI(options: VoxAIOptions = {}) {
           const errorMessage = `Connection attempt rejected: Already in a connection state (${state})`;
           console.warn(errorMessage);
 
-          // Call the onError callback if provided
           if (options.onError) {
             options.onError(new Error(errorMessage));
           }
-
-          // Return a rejected promise
           return Promise.reject(new Error(errorMessage));
         }
 
+        // Update session timestamp for new connection
+        sessionTimestampRef.current = Date.now();
         setState("connecting");
 
         const response = await fetch(HTTPS_API_ORIGIN, {
@@ -384,7 +382,6 @@ export function useVoxAI(options: VoxAIOptions = {}) {
           options.onConnect();
         }
       } catch (err) {
-        // Reset state on error
         setConnectionDetail(null);
         setTranscriptMap(new Map());
         setMessages([]);
@@ -397,11 +394,13 @@ export function useVoxAI(options: VoxAIOptions = {}) {
         }
       }
     },
-    [options]
+    [options, state]
   );
 
-  // Disconnect from VoxAI service
+  // Disconnect from VoxAI service, updating the session timestamp to ignore stale events
   const disconnect = useCallback(() => {
+    // Update session timestamp on disconnect
+    sessionTimestampRef.current = Date.now();
     setConnectionDetail(null);
     setTranscriptMap(new Map());
     setMessages([]);
@@ -421,7 +420,6 @@ export function useVoxAI(options: VoxAIOptions = {}) {
       }
 
       if (message) {
-        // Add the message to our local transcript map for immediate feedback
         const messageId = `user-text-${Date.now()}`;
         setTranscriptMap((prevMap) => {
           const newMap = new Map(prevMap);
@@ -435,7 +433,6 @@ export function useVoxAI(options: VoxAIOptions = {}) {
           return newMap;
         });
 
-        // Send message through the message channel to StateMonitor
         if (channelRef.current) {
           channelRef.current.port1.postMessage({
             type: "send_text",
@@ -447,7 +444,6 @@ export function useVoxAI(options: VoxAIOptions = {}) {
       }
 
       if (digit !== undefined) {
-        // Send DTMF through the message channel to StateMonitor
         if (channelRef.current) {
           channelRef.current.port1.postMessage({
             type: "send_dtmf",
@@ -472,10 +468,8 @@ export function useVoxAI(options: VoxAIOptions = {}) {
       barCount?: number;
       updateInterval?: number;
     }): number[] => {
-      // Store the waveform configuration for StateMonitor to use
       waveformConfigRef.current = { speaker, barCount, updateInterval };
 
-      // Send the configuration to StateMonitor if channel is available
       if (channelRef.current) {
         channelRef.current.port1.postMessage({
           type: "waveform_config",
@@ -483,41 +477,30 @@ export function useVoxAI(options: VoxAIOptions = {}) {
         });
       }
 
-      // Get the waveform data for the requested speaker
       const speakerData = waveformDataMap[speaker] || [];
-
-      // Return the current waveform data, or a default array if no data yet
       return speakerData.length > 0
-        ? speakerData.slice(0, barCount) // Ensure we return only barCount items
+        ? speakerData.slice(0, barCount)
         : Array(barCount).fill(0);
     },
     [waveformDataMap]
   );
 
   // Add toggleMic function that will be exposed in the hook's return value
-  const toggleMic = useCallback(
-    (value: boolean) => {
-      setIsMicEnabled(value);
-
-      // Send the command to the StateMonitor through the message channel
-      if (channelRef.current) {
-        channelRef.current.port1.postMessage({
-          type: "toggle_mic",
-          enabled: value,
-        });
-      } else {
-        console.error("No message channel available to toggle microphone");
-      }
-    },
-    [options]
-  );
+  const toggleMic = useCallback((value: boolean) => {
+    setIsMicEnabled(value);
+    if (channelRef.current) {
+      channelRef.current.port1.postMessage({
+        type: "toggle_mic",
+        enabled: value,
+      });
+    } else {
+      console.error("No message channel available to toggle microphone");
+    }
+  }, []);
 
   // Add setVolume function that will be exposed in the hook's return value
   const setVolume = useCallback((volume: number) => {
-    // Validate volume (0-1 range)
     const validVolume = Math.min(Math.max(volume, 0), 1);
-
-    // Send the command to the StateMonitor through the message channel
     if (channelRef.current) {
       channelRef.current.port1.postMessage({
         type: "set_volume",
@@ -533,10 +516,8 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     if (!rootRef.current) return;
 
     if (connectionDetail) {
-      // Only create a new LiveKit component if we don't have one or connection details changed
       if (!livekitComponentRef.current) {
         if (channelRef.current) {
-          // Start port2 before passing it to StateMonitor
           channelRef.current.port2.start();
         }
 
@@ -573,7 +554,6 @@ export function useVoxAI(options: VoxAIOptions = {}) {
           </LiveKitRoom>
         );
       }
-
       rootRef.current.render(livekitComponentRef.current);
     } else {
       livekitComponentRef.current = null;
@@ -581,18 +561,6 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     }
   }, [connectionDetail, disconnect, options.onError]);
 
-  /**
-   * Returns the VoxAI interface for controlling the conversation
-   * @returns {Object} VoxAI interface
-   * @property {Function} connect - Initiates a connection to the VoxAI service. Will reject with an error if already connected or in the process of connecting.
-   * @property {Function} disconnect - Terminates the connection to the VoxAI service.
-   * @property {VoxAgentState} state - The current state of the agent.
-   * @property {VoxMessage[]} messages - An array of messages exchanged in the conversation.
-   * @property {Function} send - Sends a message or DTMF digit to the agent.
-   * @property {Function} audioWaveform - Returns audio waveform data for UI visualization.
-   * @property {Function} toggleMic - Toggles the microphone on/off.
-   * @property {Function} setVolume - Sets the volume of the agent's audio (0-1).
-   */
   return {
     connect,
     disconnect,
