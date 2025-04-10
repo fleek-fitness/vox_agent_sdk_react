@@ -30,14 +30,14 @@
     "test": "jest"
   },
   "dependencies": {
-    "@livekit/components-react": "^2.8.1",
-    "livekit-client": "^2.9.5"
-  },
-  "peerDependencies": {
-    "react": ">=16.8.0",
-    "react-dom": ">=16.8.0",
     "@livekit/components-react": "^2.9.0",
     "livekit-client": "^2.10.0"
+  },
+  "peerDependencies": {
+    "@livekit/components-react": "^2.9.0",
+    "livekit-client": "^2.10.0",
+    "react": ">=16.8.0",
+    "react-dom": ">=16.8.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",
