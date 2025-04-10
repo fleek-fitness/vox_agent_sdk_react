@@ -28,7 +28,16 @@ Vox.ai 플랫폼과의 음성 AI 상호작용을 관리하는 React 훅입니다
 import { useVoxAI } from "@vox-ai/react";
 
 function VoiceComponent() {
-  const { connect, disconnect, state, messages } = useVoxAI({
+  const {
+    connect,
+    disconnect,
+    state,
+    messages,
+    send,
+    audioWaveform,
+    toggleMic,
+    setVolume,
+  } = useVoxAI({
     onConnect: () => console.log("Vox.ai에 연결됨"),
     onDisconnect: () => console.log("Vox.ai 연결 해제됨"),
     onError: (error) => console.error("오류:", error),
@@ -62,6 +71,11 @@ connect({
     userName: "홍길동",
     context: "고객-지원",
   },
+  metadata: {
+    // 통화에 대한 메타데이터를 프론트엔드에게 전달
+    callerId: "customer-123",
+    departmentId: "support",
+  },
 });
 ```
 
@@ -71,6 +85,55 @@ connect({
 
 ```tsx
 disconnect();
+```
+
+##### send
+
+텍스트 메시지나 DTMF 톤을 에이전트에 전송하는 메서드입니다.
+
+```tsx
+// 텍스트 메시지 전송
+send({ message: "안녕하세요, 도움이 필요합니다." });
+
+// DTMF 톤 전송 (0-9, *, #)
+send({ digit: 1 });
+```
+
+##### audioWaveform
+
+에이전트나 사용자의 오디오 웨이브폼 데이터를 반환하는 메서드입니다.
+
+```tsx
+// 에이전트 오디오 웨이브폼 데이터 가져오기 (기본값)
+const agentWaveform = audioWaveform({
+  speaker: "agent", // "agent" 또는 "user"
+  barCount: 20, // 반환할 웨이브폼 바의 수
+  updateInterval: 50, // 업데이트 간격 (ms)
+});
+
+// 사용자 오디오 웨이브폼 데이터 가져오기
+const userWaveform = audioWaveform({ speaker: "user" });
+```
+
+##### toggleMic
+
+사용자의 마이크를 활성화/비활성화하는 메서드입니다.
+
+```tsx
+// 마이크 활성화
+toggleMic(true);
+
+// 마이크 비활성화
+toggleMic(false);
+```
+
+##### setVolume
+
+에이전트의 볼륨을 설정하는 메서드입니다. 값은 0(음소거)부터 1(최대 볼륨)까지입니다.
+
+```tsx
+// 볼륨 50%로 설정
+setVolume(0.5);
 ```
 
 #### 상태 및 데이터
@@ -104,10 +167,13 @@ type VoxMessage = {
   message?: string;
   timestamp: number;
   isFinal?: boolean;
+  tool?: FunctionToolsExecuted; // 에이전트가 실행한 함수 도구
 };
 ```
 
 ## 예제
+
+### 기본 사용법
 
 ```tsx
 import React, { useState } from "react";
@@ -115,7 +181,7 @@ import { useVoxAI } from "@vox-ai/react";
 
 function VoiceAssistant() {
   const [isConnected, setIsConnected] = useState(false);
-  const { connect, disconnect, state, messages } = useVoxAI({
+  const { connect, disconnect, state, messages, send } = useVoxAI({
     onConnect: () => setIsConnected(true),
     onDisconnect: () => setIsConnected(false),
     onError: (error) => console.error("오류:", error),
@@ -128,6 +194,10 @@ function VoiceAssistant() {
     });
   };
 
+  const handleSendMessage = () => {
+    send({ message: "안녕하세요, 도움이 필요합니다." });
+  };
+
   return (
     <div>
       <h1>Vox.ai 음성 비서</h1>
@@ -138,6 +208,9 @@ function VoiceAssistant() {
         </button>
         <button onClick={disconnect} disabled={!isConnected}>
           연결 해제
+        </button>
+        <button onClick={handleSendMessage} disabled={!isConnected}>
+          메시지 전송
         </button>
       </div>
 
@@ -155,6 +228,48 @@ function VoiceAssistant() {
           ))}
         </ul>
       </div>
+    </div>
+  );
+}
+```
+
+### 오디오 웨이브폼 시각화 예제
+
+```tsx
+import React, { useState, useEffect } from "react";
+import { useVoxAI } from "@vox-ai/react";
+
+function WaveformVisualizer() {
+  const { audioWaveform, state } = useVoxAI();
+  const [waveformData, setWaveformData] = useState([]);
+
+  // 웨이브폼 데이터를 정기적으로 업데이트
+  useEffect(() => {
+    if (state === "disconnected") return;
+
+    const intervalId = setInterval(() => {
+      // 에이전트 오디오 웨이브폼 데이터 가져오기
+      const data = audioWaveform({ speaker: "agent", barCount: 30 });
+      setWaveformData(data);
+    }, 50);
+
+    return () => clearInterval(intervalId);
+  }, [audioWaveform, state]);
+
+  return (
+    <div className="waveform-container">
+      {waveformData.map((value, index) => (
+        <div
+          key={index}
+          className="waveform-bar"
+          style={{
+            height: `${value * 100}%`,
+            width: "10px",
+            backgroundColor: "#3498db",
+            margin: "0 2px",
+          }}
+        />
+      ))}
     </div>
   );
 }

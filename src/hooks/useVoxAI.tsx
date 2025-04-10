@@ -12,6 +12,7 @@ import {
 import { Track } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot, Root } from "react-dom/client";
+import { HTTPS_API_ORIGIN, SDK_VERSION } from "../utils/constants";
 
 type VoxConnectionDetail = {
   serverUrl: string;
@@ -32,37 +33,30 @@ export type VoxAgentState =
   | "thinking"
   | "speaking";
 
-// API endpoint
-const HTTPS_API_ORIGIN = "https://www.tryvox.co/api/agent/sdk";
-// const HTTPS_API_ORIGIN = "http://localhost:3000/api/agent/sdk";
-
 /**
  * Function call related types
  */
+export interface FunctionToolsExecuted {
+  type: "function_tools_executed";
+  function_calls: FunctionCallInfo[];
+  function_call_outputs: FunctionCallResult[];
+}
+
 export interface FunctionCallInfo {
-  tool_call_id: string;
-  function_info: {
-    name: string;
-    description: string;
-    arguments: Record<string, any>;
-  };
-  raw_arguments: string;
-  arguments: Record<string, any>;
+  id: string;
+  type: string;
+  call_id: string;
+  arguments: string;
+  name: string;
 }
 
 export interface FunctionCallResult {
-  call_info: {
-    tool_call_id: string;
-    function_info: {
-      name: string;
-      description: string;
-      arguments: Record<string, any>;
-    };
-    raw_arguments: string;
-    arguments: Record<string, any>;
-  };
-  result: Record<string, any> | null;
-  exception: string | null;
+  id: string;
+  name: string;
+  type: string;
+  call_id: string;
+  output: string;
+  is_error: boolean;
 }
 
 /**
@@ -75,8 +69,7 @@ export type VoxMessage = {
   message?: string;
   timestamp: number;
   isFinal?: boolean;
-  toolCalls?: FunctionCallInfo[];
-  toolCallResults?: FunctionCallResult[];
+  tool?: FunctionToolsExecuted;
 };
 
 /**
@@ -99,8 +92,7 @@ type MessageChannelEvent =
       waveformData: number[];
       speaker: "agent" | "user";
     }
-  | { type: "function_calls_collected"; functionCalls: FunctionCallInfo[] }
-  | { type: "function_calls_finished"; functionResults: FunctionCallResult[] };
+  | { type: "function_tools_executed"; tool: FunctionToolsExecuted };
 
 type TranscriptionSegment = {
   id: string;
@@ -234,10 +226,7 @@ export function useVoxAI(options: VoxAIOptions = {}) {
           ...prevMap,
           [data.speaker]: data.waveformData,
         }));
-      } else if (
-        data.type === "function_calls_collected" &&
-        data.functionCalls
-      ) {
+      } else if (data.type === "function_tools_executed" && data.tool) {
         // Handle function calls
         const functionCallsId = `function-calls-${Date.now()}`;
         setTranscriptMap((prevMap) => {
@@ -245,24 +234,7 @@ export function useVoxAI(options: VoxAIOptions = {}) {
           newMap.set(functionCallsId, {
             id: functionCallsId,
             name: "tool",
-            toolCalls: data.functionCalls,
-            timestamp: Date.now(),
-            isFinal: true,
-          });
-          return newMap;
-        });
-      } else if (
-        data.type === "function_calls_finished" &&
-        data.functionResults
-      ) {
-        // Handle function results
-        const functionResultsId = `function-results-${Date.now()}`;
-        setTranscriptMap((prevMap) => {
-          const newMap = new Map(prevMap);
-          newMap.set(functionResultsId, {
-            id: functionResultsId,
-            name: "tool",
-            toolCallResults: data.functionResults,
+            tool: data.tool,
             timestamp: Date.now(),
             isFinal: true,
           });
@@ -360,6 +332,12 @@ export function useVoxAI(options: VoxAIOptions = {}) {
           body: JSON.stringify({
             agent_id: agentId,
             metadata: {
+              runtime_context: {
+                source: {
+                  type: "react-sdk",
+                  version: SDK_VERSION,
+                },
+              },
               call_web: {
                 dynamic_variables: dynamicVariables || {},
                 metadata: metadata || {},
@@ -771,8 +749,8 @@ function StateMonitor({
   }, [localMessages.segments, port]);
 
   // Add data channel hook for function calls
-  const { message: functionCallsCollected } = useDataChannel(
-    "function_calls_collected",
+  const { message: functionToolsExecuted } = useDataChannel(
+    "function_tools_executed",
     (msg) => {
       if (!port) return;
 
@@ -782,44 +760,17 @@ function StateMonitor({
           ? textDecoder.decode(msg.payload)
           : String(msg.payload);
 
-      let functionCallInfo: FunctionCallInfo[];
+      let tool: FunctionToolsExecuted;
       try {
-        functionCallInfo = JSON.parse(messageString);
+        tool = JSON.parse(messageString);
 
         // Send function calls to main hook via the port
         port.postMessage({
-          type: "function_calls_collected",
-          functionCalls: functionCallInfo,
+          type: "function_tools_executed",
+          tool: tool,
         });
       } catch (e) {
         console.error("Failed to parse function call log:", e);
-      }
-    }
-  );
-
-  // Add data channel hook for function call results
-  const { message: functionCallsFinished } = useDataChannel(
-    "function_calls_finished",
-    (msg) => {
-      if (!port) return;
-
-      const textDecoder = new TextDecoder();
-      const messageString =
-        msg.payload instanceof Uint8Array
-          ? textDecoder.decode(msg.payload)
-          : String(msg.payload);
-
-      let functionCallResult: FunctionCallResult[];
-      try {
-        functionCallResult = JSON.parse(messageString);
-
-        // Send function results to main hook via the port
-        port.postMessage({
-          type: "function_calls_finished",
-          functionResults: functionCallResult,
-        });
-      } catch (e) {
-        console.error("Failed to parse function call result:", e);
       }
     }
   );
