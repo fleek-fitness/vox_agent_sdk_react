@@ -9,4 +9,7 @@ export type {
   VoxMessage,
   VoxAIOptions,
   ConnectParams,
+  FunctionToolsExecuted,
+  FunctionCallInfo,
+  FunctionCallResult,
 } from "./hooks";
