@@ -46,7 +46,7 @@ export interface FunctionCallInfo {
   id: string;
   type: string;
   call_id: string;
-  arguments: string;
+  arguments: Record<string, any>;
   name: string;
 }
 
@@ -105,12 +105,14 @@ type TranscriptionSegment = {
 /**
  * ConnectParams
  * @param agentId - The agent ID
+ * @param agentVersion - The agent version, if not provided, the current version will be used
  * @param apiKey - The API key
  * @param dynamicVariables - The dynamic variables
  * @param metadata - 이 메타데이터는 아웃바운드 웹훅, 통화 기록에 포함됩니다.
  */
 export interface ConnectParams {
   agentId: string;
+  agentVersion?: number;
   apiKey: string;
   dynamicVariables?: Record<string, any>;
   metadata?: Record<string, any>;
