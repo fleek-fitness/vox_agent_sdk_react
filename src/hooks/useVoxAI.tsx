@@ -22,64 +22,149 @@ type VoxConnectionDetail = {
 };
 
 /**
- * VoxAgentState
- * @description The state of the agent
+ * 음성 AI 에이전트의 현재 상태를 나타냅니다.
+ *
+ * @remarks
+ * 에이전트의 상태는 다음과 같이 변화합니다:
+ * `disconnected` → `connecting` → `initializing` → `listening` ⇄ `thinking` ⇄ `speaking`
+ *
+ * @example
+ * ```tsx
+ * const { state } = useVoxAI();
+ *
+ * if (state === 'listening') {
+ *   console.log('에이전트가 사용자의 말을 듣고 있습니다');
+ * }
+ * ```
  */
 export type VoxAgentState =
+  /** 연결되지 않은 상태 */
   | "disconnected"
+  /** Vox.ai 서버에 연결 중 */
   | "connecting"
+  /** LiveKit 세션을 초기화하는 중 */
   | "initializing"
+  /** 에이전트가 사용자의 음성을 듣고 있는 상태 */
   | "listening"
+  /** 에이전트가 응답을 생각하고 있는 상태 */
   | "thinking"
+  /** 에이전트가 응답을 말하고 있는 상태 */
   | "speaking";
 
 /**
- * Function call related types
+ * 에이전트가 실행한 함수 도구들의 정보를 담고 있는 타입입니다.
+ *
+ * @remarks
+ * 에이전트가 외부 API를 호출하거나 특정 작업을 수행할 때 이 타입의 데이터가 생성됩니다.
  */
 export interface FunctionToolsExecuted {
+  /** 이벤트 타입 */
   type: "function_tools_executed";
+  /** 실행된 함수 호출 정보 배열 */
   function_calls: FunctionCallInfo[];
+  /** 함수 호출 결과 배열 */
   function_call_outputs: FunctionCallResult[];
 }
 
+/**
+ * 에이전트가 호출한 함수의 정보를 담고 있는 타입입니다.
+ */
 export interface FunctionCallInfo {
+  /** 함수 호출 고유 ID */
   id: string;
+  /** 함수 타입 */
   type: string;
+  /** 함수 호출 ID */
   call_id: string;
+  /** 함수에 전달된 인자들 */
   arguments: Record<string, any>;
+  /** 호출된 함수의 이름 */
   name: string;
 }
 
+/**
+ * 함수 호출의 결과를 담고 있는 타입입니다.
+ */
 export interface FunctionCallResult {
+  /** 결과 고유 ID */
   id: string;
+  /** 호출된 함수의 이름 */
   name: string;
+  /** 결과 타입 */
   type: string;
+  /** 함수 호출 ID */
   call_id: string;
+  /** 함수 실행 결과 (문자열 형태) */
   output: string;
+  /** 에러 발생 여부 */
   is_error: boolean;
 }
 
 /**
- * VoxMessage
- * @description The message type between the agent and the user
+ * 에이전트와 사용자 간의 대화 메시지를 나타내는 타입입니다.
+ *
+ * @remarks
+ * - `name`이 "agent"인 경우: AI 에이전트가 말한 내용
+ * - `name`이 "user"인 경우: 사용자가 말한 내용 (음성 또는 텍스트)
+ * - `name`이 "tool"인 경우: 에이전트가 실행한 함수 도구 정보
+ *
+ * @example
+ * ```tsx
+ * const { messages } = useVoxAI();
+ *
+ * messages.forEach(msg => {
+ *   if (msg.name === 'user' && msg.isFinal) {
+ *     console.log('사용자:', msg.message);
+ *   }
+ * });
+ * ```
  */
 export type VoxMessage = {
+  /** 메시지 고유 ID */
   id?: string;
+  /** 메시지 발신자 타입 */
   name: "agent" | "user" | "tool";
+  /** 메시지 내용 (음성 전사 텍스트 또는 사용자가 보낸 텍스트) */
   message?: string;
+  /** 메시지 생성 시각 (Unix timestamp) */
   timestamp: number;
+  /** 최종 확정된 메시지인지 여부 (false인 경우 음성 인식 중간 결과) */
   isFinal?: boolean;
+  /** 함수 도구 실행 정보 (name이 "tool"인 경우에만 존재) */
   tool?: FunctionToolsExecuted;
 };
 
 /**
- * VoxAIOptions
- * @description The callback functions for the useVoxAI hook
+ * useVoxAI 훅의 콜백 함수들을 설정하는 옵션입니다.
+ *
+ * @example
+ * ```tsx
+ * const vox = useVoxAI({
+ *   onConnect: () => {
+ *     console.log('음성 AI에 연결되었습니다');
+ *   },
+ *   onDisconnect: () => {
+ *     console.log('연결이 종료되었습니다');
+ *   },
+ *   onError: (error) => {
+ *     console.error('오류 발생:', error.message);
+ *   },
+ *   onMessage: (message) => {
+ *     if (message.isFinal) {
+ *       console.log(`${message.name}: ${message.message}`);
+ *     }
+ *   }
+ * });
+ * ```
  */
 export interface VoxAIOptions {
+  /** 음성 AI 연결이 성공했을 때 호출되는 콜백 */
   onConnect?: () => void;
+  /** 음성 AI 연결이 종료되었을 때 호출되는 콜백 */
   onDisconnect?: () => void;
+  /** 오류가 발생했을 때 호출되는 콜백 */
   onError?: (error: Error) => void;
+  /** 새로운 최종 메시지가 수신되었을 때 호출되는 콜백 (isFinal이 true인 메시지만 전달됨) */
   onMessage?: (message: VoxMessage) => void;
 }
 
@@ -103,33 +188,142 @@ type TranscriptionSegment = {
 };
 
 /**
- * ConnectParams
- * @param agentId - The agent ID
- * @param agentVersion - The agent version, if not provided, the current version will be used
- * @param apiKey - The API key
- * @param dynamicVariables - The dynamic variables
- * @param metadata - 이 메타데이터는 아웃바운드 웹훅, 통화 기록에 포함됩니다.
+ * Vox.ai 음성 AI에 연결하기 위한 매개변수입니다.
+ *
+ * @example
+ * ```tsx
+ * // 기본 연결 (current 버전)
+ * connect({
+ *   agentId: 'my-agent-id',
+ *   apiKey: 'my-api-key'
+ * });
+ *
+ * // 특정 버전으로 연결
+ * connect({
+ *   agentId: 'my-agent-id',
+ *   agentVersion: 'v5',
+ *   apiKey: 'my-api-key'
+ * });
+ *
+ * // 동적 변수와 함께 연결
+ * connect({
+ *   agentId: 'my-agent-id',
+ *   apiKey: 'my-api-key',
+ *   dynamicVariables: {
+ *     userName: '홍길동',
+ *     userId: 'user123'
+ *   },
+ *   metadata: {
+ *     sessionId: 'sess_abc123'
+ *   }
+ * });
+ * ```
  */
 export interface ConnectParams {
+  /**
+   * 연결할 에이전트의 ID
+   * @remarks Vox.ai 대시보드에서 확인할 수 있습니다.
+   */
   agentId: string;
-  agentVersion?: number;
+
+  /**
+   * 사용할 에이전트 버전
+   * @remarks
+   * - `'v1'`, `'v2'`, `'v12'` 등: 특정 버전 번호 (v + 숫자 형식)
+   * - `'current'`: 현재 편집중인 버전 (기본값)
+   * - `'production'`: 프로덕션으로 지정된 버전
+   * - `undefined` 또는 미지정: 'current' 버전 사용
+   */
+  agentVersion?: string;
+
+  /**
+   * Vox.ai API 키
+   * @remarks Vox.ai 대시보드에서 발급받을 수 있습니다.
+   */
   apiKey: string;
+
+  /**
+   * 에이전트 대화에 전달할 동적 변수
+   * @remarks
+   * 에이전트 프롬프트에서 이 변수들을 참조하여 개인화된 대화를 만들 수 있습니다.
+   * @example
+   * ```tsx
+   * dynamicVariables: {
+   *   userName: '홍길동',
+   *   userType: 'premium',
+   *   accountBalance: 50000
+   * }
+   * ```
+   */
   dynamicVariables?: Record<string, any>;
+
+  /**
+   * 통화 메타데이터
+   * @remarks
+   * 이 메타데이터는 아웃바운드 웹훅과 통화 기록에 포함되어,
+   * 외부 시스템과의 연동이나 분석에 활용할 수 있습니다.
+   * @example
+   * ```tsx
+   * metadata: {
+   *   source: 'mobile-app',
+   *   campaignId: 'spring-2024',
+   *   customerId: 'cust_123'
+   * }
+   * ```
+   */
   metadata?: Record<string, any>;
 }
 
 /**
- * useVoxAI
- * @description The hook for integrating with vox.ai voice assistant
- * @param options - The options for the useVoxAI hook
- * @returns The useVoxAI hook
+ * Vox.ai 음성 AI를 React 애플리케이션에 통합하기 위한 훅입니다.
+ *
+ * @param options - 연결 이벤트에 대한 콜백 함수들을 설정하는 옵션 객체
+ *
+ * @returns 음성 AI를 제어하기 위한 메서드와 상태를 포함한 객체
+ * - `connect`: Vox.ai 서버에 연결하는 함수
+ * - `disconnect`: 연결을 종료하는 함수
+ * - `state`: 에이전트의 현재 상태
+ * - `messages`: 대화 메시지 배열
+ * - `send`: 텍스트 메시지 또는 DTMF 숫자를 전송하는 함수
+ * - `audioWaveform`: 실시간 오디오 파형 데이터를 가져오는 함수
+ * - `toggleMic`: 마이크를 켜거나 끄는 함수
+ * - `setVolume`: 에이전트 음성의 볼륨을 조절하는 함수
+ *
  * @example
- * const { connect, disconnect, state, messages, send } = useVoxAI({
- *   onConnect: () => console.log("Connected"),
- *   onDisconnect: () => console.log("Disconnected"),
- *   onError: (error) => console.error("Error:", error),
- *   onMessage: (message) => console.log("Message:", message),
- * });
+ * ```tsx
+ * function MyComponent() {
+ *   const {
+ *     connect,
+ *     disconnect,
+ *     state,
+ *     messages,
+ *     send,
+ *     audioWaveform,
+ *     toggleMic,
+ *     setVolume
+ *   } = useVoxAI({
+ *     onConnect: () => console.log("연결됨"),
+ *     onDisconnect: () => console.log("연결 종료"),
+ *     onError: (error) => console.error("오류:", error),
+ *     onMessage: (message) => console.log("새 메시지:", message)
+ *   });
+ *
+ *   const handleConnect = () => {
+ *     connect({
+ *       agentId: 'my-agent-id',
+ *       apiKey: 'my-api-key'
+ *     });
+ *   };
+ *
+ *   return (
+ *     <div>
+ *       <button onClick={handleConnect}>연결</button>
+ *       <button onClick={disconnect}>연결 해제</button>
+ *       <p>상태: {state}</p>
+ *     </div>
+ *   );
+ * }
+ * ```
  */
 export function useVoxAI(options: VoxAIOptions = {}) {
   // Connection state
@@ -306,9 +500,49 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     };
   }, []);
 
-  // Connect to VoxAI service - updated to include dynamicVariables
+  /**
+   * Vox.ai 음성 AI 서버에 연결합니다.
+   *
+   * @param params - 연결에 필요한 매개변수 ({@link ConnectParams} 참조)
+   *
+   * @remarks
+   * - 이미 연결된 상태에서 호출하면 오류가 발생합니다.
+   * - 연결에 성공하면 `onConnect` 콜백이 호출됩니다.
+   * - 연결에 실패하면 `onError` 콜백이 호출됩니다.
+   * - 연결 성공 후 상태가 `connecting` → `initializing` → `listening`으로 변화합니다.
+   *
+   * @throws {Error} 이미 연결된 상태이거나 인증에 실패한 경우
+   *
+   * @example
+   * ```tsx
+   * const { connect } = useVoxAI();
+   *
+   * // 기본 연결
+   * await connect({
+   *   agentId: 'agent_abc123',
+   *   apiKey: 'key_xyz789'
+   * });
+   *
+   * // 특정 버전과 동적 변수로 연결
+   * await connect({
+   *   agentId: 'agent_abc123',
+   *   agentVersion: 'v5',
+   *   apiKey: 'key_xyz789',
+   *   dynamicVariables: {
+   *     userName: '홍길동',
+   *     userId: 'user_123'
+   *   }
+   * });
+   * ```
+   */
   const connect = useCallback(
-    async ({ agentId, apiKey, dynamicVariables, metadata }: ConnectParams) => {
+    async ({
+      agentId,
+      agentVersion,
+      apiKey,
+      dynamicVariables,
+      metadata,
+    }: ConnectParams) => {
       try {
         // Prevent connecting if already in a connection state
         if (state !== "disconnected") {
@@ -325,27 +559,30 @@ export function useVoxAI(options: VoxAIOptions = {}) {
         sessionTimestampRef.current = Date.now();
         setState("connecting");
 
+        const requestBody: any = {
+          agent_id: agentId,
+          agent_version: agentVersion || "current",
+          metadata: {
+            runtime_context: {
+              source: {
+                type: "react-sdk",
+                version: SDK_VERSION,
+              },
+            },
+            call_web: {
+              dynamic_variables: dynamicVariables || {},
+              metadata: metadata || {},
+            },
+          },
+        };
+
         const response = await fetch(HTTPS_API_ORIGIN, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            agent_id: agentId,
-            metadata: {
-              runtime_context: {
-                source: {
-                  type: "react-sdk",
-                  version: SDK_VERSION,
-                },
-              },
-              call_web: {
-                dynamic_variables: dynamicVariables || {},
-                metadata: metadata || {},
-              },
-            },
-          }),
+          body: JSON.stringify(requestBody),
         });
 
         if (!response.ok) {
@@ -377,7 +614,23 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     [options, state]
   );
 
-  // Disconnect from VoxAI service, updating the session timestamp to ignore stale events
+  /**
+   * 음성 AI 연결을 종료합니다.
+   *
+   * @remarks
+   * - 연결이 종료되면 `onDisconnect` 콜백이 호출됩니다.
+   * - 모든 메시지와 상태가 초기화됩니다.
+   * - 상태가 `disconnected`로 변경됩니다.
+   * - 연결되지 않은 상태에서 호출해도 안전합니다.
+   *
+   * @example
+   * ```tsx
+   * const { disconnect } = useVoxAI();
+   *
+   * // 연결 종료
+   * disconnect();
+   * ```
+   */
   const disconnect = useCallback(() => {
     // Update session timestamp on disconnect
     sessionTimestampRef.current = Date.now();
@@ -391,7 +644,33 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     }
   }, [options]);
 
-  // Update the send function with debugging and error checking
+  /**
+   * 에이전트에게 텍스트 메시지를 전송하거나 DTMF 숫자를 입력합니다.
+   *
+   * @param params - 전송할 메시지 또는 DTMF 숫자
+   * @param params.message - 전송할 텍스트 메시지 (음성 대신 텍스트로 입력)
+   * @param params.digit - 전송할 DTMF 숫자 (0-9, *, #에 해당하는 숫자)
+   *
+   * @remarks
+   * - 연결되지 않은 상태에서 호출하면 경고 메시지가 출력되고 무시됩니다.
+   * - `message`와 `digit`을 동시에 전달할 수 있습니다.
+   * - 텍스트 메시지는 음성 입력 대신 사용할 수 있습니다.
+   * - DTMF는 전화번호 입력 등에 활용됩니다.
+   *
+   * @example
+   * ```tsx
+   * const { send } = useVoxAI();
+   *
+   * // 텍스트 메시지 전송
+   * send({ message: '안녕하세요' });
+   *
+   * // DTMF 숫자 전송
+   * send({ digit: 1 });
+   *
+   * // 둘 다 전송
+   * send({ message: '1번을 선택합니다', digit: 1 });
+   * ```
+   */
   const send = useCallback(
     ({ message, digit }: { message?: string; digit?: number }) => {
       if (state === "disconnected") {
@@ -437,7 +716,48 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     [state]
   );
 
-  // Update the audioWaveform function to return data for the requested speaker
+  /**
+   * 실시간 오디오 파형 데이터를 가져옵니다.
+   *
+   * @param params - 파형 설정 옵션
+   * @param params.speaker - 파형을 가져올 대상 (`"agent"` 또는 `"user"`, 기본값: `"agent"`)
+   * @param params.barCount - 반환할 파형 막대 개수 (기본값: 10)
+   * @param params.updateInterval - 파형 업데이트 간격 (밀리초, 기본값: 20)
+   *
+   * @returns 0~1 사이의 값을 가진 숫자 배열 (길이는 `barCount`와 동일)
+   *
+   * @remarks
+   * - 각 값은 해당 주파수 대역의 음량을 나타냅니다 (0: 무음, 1: 최대 음량).
+   * - 음성 시각화 UI를 만들 때 유용합니다.
+   * - 연결되지 않은 상태에서는 모두 0으로 채워진 배열을 반환합니다.
+   *
+   * @example
+   * ```tsx
+   * const { audioWaveform, state } = useVoxAI();
+   *
+   * // 렌더링 루프에서 사용
+   * useEffect(() => {
+   *   const interval = setInterval(() => {
+   *     // 에이전트의 파형 데이터 (20개 막대)
+   *     const agentWaveform = audioWaveform({
+   *       speaker: 'agent',
+   *       barCount: 20
+   *     });
+   *
+   *     // 사용자의 파형 데이터
+   *     const userWaveform = audioWaveform({
+   *       speaker: 'user',
+   *       barCount: 20
+   *     });
+   *
+   *     // 시각화 업데이트
+   *     updateVisualization(agentWaveform, userWaveform);
+   *   }, 50);
+   *
+   *   return () => clearInterval(interval);
+   * }, []);
+   * ```
+   */
   const audioWaveform = useCallback(
     ({
       speaker = "agent",
@@ -465,7 +785,34 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     [waveformDataMap]
   );
 
-  // Add toggleMic function that will be exposed in the hook's return value
+  /**
+   * 사용자의 마이크를 켜거나 끕니다.
+   *
+   * @param value - `true`면 마이크 켜기, `false`면 마이크 끄기
+   *
+   * @remarks
+   * - 마이크를 끄면 에이전트가 사용자의 음성을 듣지 못합니다.
+   * - 음성 인식도 중단됩니다.
+   * - 프라이버시나 소음 차단이 필요할 때 유용합니다.
+   *
+   * @example
+   * ```tsx
+   * const { toggleMic } = useVoxAI();
+   *
+   * // 마이크 끄기
+   * toggleMic(false);
+   *
+   * // 마이크 켜기
+   * toggleMic(true);
+   *
+   * // 토글 버튼 예제
+   * const [isMuted, setIsMuted] = useState(false);
+   * const handleToggle = () => {
+   *   setIsMuted(!isMuted);
+   *   toggleMic(!isMuted);
+   * };
+   * ```
+   */
   const toggleMic = useCallback((value: boolean) => {
     setIsMicEnabled(value);
     if (channelRef.current) {
@@ -478,7 +825,41 @@ export function useVoxAI(options: VoxAIOptions = {}) {
     }
   }, []);
 
-  // Add setVolume function that will be exposed in the hook's return value
+  /**
+   * 에이전트 음성의 볼륨을 설정합니다.
+   *
+   * @param volume - 볼륨 크기 (0.0 ~ 1.0 사이의 값, 0: 무음, 1: 최대 음량)
+   *
+   * @remarks
+   * - 범위를 벗어난 값은 자동으로 0~1 사이로 조정됩니다.
+   * - 예: `-0.5` → `0`, `1.5` → `1`
+   * - 사용자의 환경에 따라 적절한 볼륨을 설정할 수 있습니다.
+   *
+   * @example
+   * ```tsx
+   * const { setVolume } = useVoxAI();
+   *
+   * // 볼륨을 50%로 설정
+   * setVolume(0.5);
+   *
+   * // 볼륨을 최대로 설정
+   * setVolume(1.0);
+   *
+   * // 볼륨 슬라이더 예제
+   * const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+   *   const newVolume = parseFloat(e.target.value);
+   *   setVolume(newVolume);
+   * };
+   *
+   * <input
+   *   type="range"
+   *   min="0"
+   *   max="1"
+   *   step="0.1"
+   *   onChange={handleVolumeChange}
+   * />
+   * ```
+   */
   const setVolume = useCallback((volume: number) => {
     const validVolume = Math.min(Math.max(volume, 0), 1);
     if (channelRef.current) {
