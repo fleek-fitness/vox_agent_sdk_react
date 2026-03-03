@@ -1,15 +1,12 @@
-/**
- * @voxai/react
- * React UI component library for vox.ai
- */
-
-export { useVoxAI } from "./hooks";
+export { useConversation } from "./hooks";
 export type {
-  VoxAgentState,
-  VoxMessage,
-  VoxAIOptions,
-  ConnectParams,
-  FunctionToolsExecuted,
-  FunctionCallInfo,
-  FunctionCallResult,
+  ConversationMessage,
+  ConversationMode,
+  ConversationSource,
+  ConversationStatus,
+  InputDeviceConfig,
+  OutputDeviceConfig,
+  SetVolumeParams,
+  StartConversationOptions,
+  UseConversationOptions,
 } from "./hooks";

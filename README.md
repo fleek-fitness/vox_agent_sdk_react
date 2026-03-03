@@ -1,282 +1,208 @@
-# Vox.ai React 라이브러리
+# @vox-ai/react
 
-React 애플리케이션에 음성 AI 기능을 통합하기 위한 SDK 라이브러리입니다.
+vox.ai voice agent를 React 앱에서 사용하기 위한 hook 라이브러리.
 
 ## 설치
 
-패키지 매니저를 통해 프로젝트에 라이브러리를 설치하세요.
-
 ```bash
 npm install @vox-ai/react
-# 또는
+# or
 yarn add @vox-ai/react
-# 또는
-pnpm install @vox-ai/react
+# or
+pnpm add @vox-ai/react
 ```
 
-## 사용법
-
-### useVoxAI
-
-Vox.ai 플랫폼과의 음성 AI 상호작용을 관리하는 React 훅입니다.
-
-#### 초기화
-
-먼저 useVoxAI 훅을 초기화합니다.
+## 빠른 시작
 
 ```tsx
-import { useVoxAI } from "@vox-ai/react";
+import { useConversation } from "@vox-ai/react";
 
-function VoiceComponent() {
-  const {
-    connect,
-    disconnect,
-    state,
-    messages,
-    send,
-    audioWaveform,
-    toggleMic,
-    setVolume,
-  } = useVoxAI({
-    onConnect: () => console.log("Vox.ai에 연결됨"),
-    onDisconnect: () => console.log("Vox.ai 연결 해제됨"),
-    onError: (error) => console.error("오류:", error),
-    onMessage: (message) => console.log("새 메시지:", message),
+export function VoiceWidget() {
+  const conversation = useConversation({
+    onConnect: () => console.log("연결됨"),
+    onDisconnect: () => console.log("연결 종료"),
+    onStatusChange: (status) => console.log("status:", status),
+    onModeChange: (mode) => console.log("mode:", mode),
+    onMessage: (message) => console.log(`${message.source}: ${message.text}`),
+    onError: (error) => console.error("error:", error.message),
   });
 
-  // 컴포넌트의 나머지 부분
-}
-```
+  const start = async () => {
+    // 마이크 권한 요청 (UI에서 사전 안내 권장)
+    await navigator.mediaDevices.getUserMedia({ audio: true });
 
-#### 옵션
-
-- **onConnect** - 음성 AI 연결이 설정되었을 때 호출되는 핸들러
-- **onDisconnect** - 음성 AI 연결이 종료되었을 때 호출되는 핸들러
-- **onMessage** - 새 메시지가 수신되었을 때 호출되는 핸들러
-- **onError** - 오류가 발생했을 때 호출되는 핸들러
-
-#### 메서드
-
-##### connect
-
-Vox.ai 서비스에 연결을 설정합니다. 인증 매개변수가 필요합니다.
-
-```tsx
-// 에이전트 ID와 API 키로 Vox.ai에 연결
-connect({
-  agentId: "your-agent-id",
-  apiKey: "your-api-key",
-  dynamicVariables: {
-    // 대화 커스터마이징을 위한 동적 변수
-    userName: "홍길동",
-    context: "고객-지원",
-  },
-  metadata: {
-    // 통화에 대한 메타데이터를 프론트엔드에게 전달
-    callerId: "customer-123",
-    departmentId: "support",
-  },
-});
-```
-
-##### disconnect
-
-음성 AI 세션을 수동으로 종료하는 메서드입니다.
-
-```tsx
-disconnect();
-```
-
-##### send
-
-텍스트 메시지나 DTMF 톤을 에이전트에 전송하는 메서드입니다.
-
-```tsx
-// 텍스트 메시지 전송
-send({ message: "안녕하세요, 도움이 필요합니다." });
-
-// DTMF 톤 전송 (0-9, *, #)
-send({ digit: 1 });
-```
-
-##### audioWaveform
-
-에이전트나 사용자의 오디오 웨이브폼 데이터를 반환하는 메서드입니다.
-
-```tsx
-// 에이전트 오디오 웨이브폼 데이터 가져오기 (기본값)
-const agentWaveform = audioWaveform({
-  speaker: "agent", // "agent" 또는 "user"
-  barCount: 20, // 반환할 웨이브폼 바의 수
-  updateInterval: 50, // 업데이트 간격 (ms)
-});
-
-// 사용자 오디오 웨이브폼 데이터 가져오기
-const userWaveform = audioWaveform({ speaker: "user" });
-```
-
-##### toggleMic
-
-사용자의 마이크를 활성화/비활성화하는 메서드입니다.
-
-```tsx
-// 마이크 활성화
-toggleMic(true);
-
-// 마이크 비활성화
-toggleMic(false);
-```
-
-##### setVolume
-
-에이전트의 볼륨을 설정하는 메서드입니다. 값은 0(음소거)부터 1(최대 볼륨)까지입니다.
-
-```tsx
-// 볼륨 50%로 설정
-setVolume(0.5);
-```
-
-#### 상태 및 데이터
-
-##### state
-
-음성 AI 상호작용의 현재 상태를 포함하는 React 상태입니다.
-
-```tsx
-const { state } = useVoxAI();
-console.log(state); // "disconnected", "connecting", "initializing", "listening", "thinking", "speaking" 중 하나
-```
-
-이 상태를 사용하여 사용자에게 적절한 UI 표시기를 보여줄 수 있습니다.
-
-##### messages
-
-대화 기록을 포함하는 React 상태입니다.
-
-```tsx
-const { messages } = useVoxAI();
-console.log(messages); // 메시지 객체 배열
-```
-
-각 메시지는 다음 구조를 가집니다:
-
-```tsx
-type VoxMessage = {
-  id?: string;
-  name: "agent" | "user" | "tool";
-  message?: string;
-  timestamp: number;
-  isFinal?: boolean;
-  tool?: FunctionToolsExecuted; // 에이전트가 실행한 함수 도구
-};
-```
-
-## 예제
-
-### 기본 사용법
-
-```tsx
-import React, { useState } from "react";
-import { useVoxAI } from "@vox-ai/react";
-
-function VoiceAssistant() {
-  const [isConnected, setIsConnected] = useState(false);
-  const { connect, disconnect, state, messages, send } = useVoxAI({
-    onConnect: () => setIsConnected(true),
-    onDisconnect: () => setIsConnected(false),
-    onError: (error) => console.error("오류:", error),
-  });
-
-  const handleConnect = () => {
-    connect({
-      agentId: "your-agent-id",
-      apiKey: "your-api-key",
+    const conversationId = await conversation.startSession({
+      agentId: "YOUR_AGENT_ID",
+      apiKey: "YOUR_API_KEY",
     });
-  };
-
-  const handleSendMessage = () => {
-    send({ message: "안녕하세요, 도움이 필요합니다." });
+    console.log("session started:", conversationId);
   };
 
   return (
     <div>
-      <h1>Vox.ai 음성 비서</h1>
-
-      <div>
-        <button onClick={handleConnect} disabled={isConnected}>
-          연결
-        </button>
-        <button onClick={disconnect} disabled={!isConnected}>
-          연결 해제
-        </button>
-        <button onClick={handleSendMessage} disabled={!isConnected}>
-          메시지 전송
-        </button>
-      </div>
-
-      <div>
-        <p>현재 상태: {state}</p>
-      </div>
-
-      <div>
-        <h2>대화</h2>
-        <ul>
-          {messages.map((msg, index) => (
-            <li key={msg.id || index}>
-              <strong>{msg.name}:</strong> {msg.message}
-            </li>
-          ))}
-        </ul>
-      </div>
+      <button onClick={start} disabled={conversation.status !== "disconnected"}>
+        Start
+      </button>
+      <button onClick={conversation.endSession}>End</button>
+      <p>Status: {conversation.status}</p>
+      <p>Speaking: {conversation.isSpeaking ? "Yes" : "No"}</p>
     </div>
   );
 }
 ```
 
-### 오디오 웨이브폼 시각화 예제
+## `useConversation(options?)`
+
+### 콜백 (hook 초기화 시 전달)
+
+| 콜백 | 시그니처 | 설명 |
+|------|----------|------|
+| `onConnect` | `() => void` | 연결 성공 |
+| `onDisconnect` | `() => void` | 연결 종료 |
+| `onStatusChange` | `(status: ConversationStatus) => void` | Status 변경 (`"disconnected"` → `"connecting"` → `"connected"`) |
+| `onModeChange` | `(mode: ConversationMode) => void` | Mode 변경 (`"listening"` ⇄ `"speaking"`) |
+| `onMessage` | `(message: ConversationMessage) => void` | 메시지 수신 (user transcription, agent response) |
+| `onError` | `(error: Error) => void` | 에러 발생 |
+
+### React State
+
+| State | 타입 | 설명 |
+|-------|------|------|
+| `status` | `ConversationStatus` | `"disconnected"` \| `"connecting"` \| `"connected"` |
+| `isSpeaking` | `boolean` | Agent가 현재 발화 중인지 여부 |
+| `micMuted` | `boolean` | 마이크 음소거 상태 |
+
+> JS SDK의 `getStatus()`, `getMode()`, `getMicMuted()`에 대응. React에서는 state로 제공되므로 자동 re-render.
+
+### 메서드
+
+#### 세션 제어
 
 ```tsx
-import React, { useState, useEffect } from "react";
-import { useVoxAI } from "@vox-ai/react";
+// 세션 시작 — conversationId를 반환
+const conversationId = await conversation.startSession({
+  agentId: "YOUR_AGENT_ID",
+  apiKey: "YOUR_API_KEY",
+});
 
-function WaveformVisualizer() {
-  const { audioWaveform, state } = useVoxAI();
-  const [waveformData, setWaveformData] = useState([]);
+// 세션 종료
+await conversation.endSession();
 
-  // 웨이브폼 데이터를 정기적으로 업데이트
-  useEffect(() => {
-    if (state === "disconnected") return;
-
-    const intervalId = setInterval(() => {
-      // 에이전트 오디오 웨이브폼 데이터 가져오기
-      const data = audioWaveform({ speaker: "agent", barCount: 30 });
-      setWaveformData(data);
-    }, 50);
-
-    return () => clearInterval(intervalId);
-  }, [audioWaveform, state]);
-
-  return (
-    <div className="waveform-container">
-      {waveformData.map((value, index) => (
-        <div
-          key={index}
-          className="waveform-bar"
-          style={{
-            height: `${value * 100}%`,
-            width: "10px",
-            backgroundColor: "#3498db",
-            margin: "0 2px",
-          }}
-        />
-      ))}
-    </div>
-  );
-}
+// 세션 ID 조회
+const id = conversation.getId();
 ```
 
-## 기여하기
+#### `startSession` 옵션
 
-변경 사항을 제안하기 전에 먼저 이슈를 생성해 주세요. 모든 기여를 환영합니다!
+| 옵션 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| `agentId` | `string` | O | Agent ID |
+| `apiKey` | `string` | O | API key |
+| `agentVersion` | `string` | | Agent version (`"current"`, `"production"`, `"v1"` 등, default: `"current"`) |
+| `dynamicVariables` | `Record<string, string \| number \| boolean>` | | Agent prompt에 주입할 dynamic variables |
+| `metadata` | `Record<string, unknown>` | | Call metadata (webhook, call log에 포함) |
 
-Pull Request를 제출함으로써, 귀하는 코드가 MIT 라이센스 하에 이 라이브러리에 통합되는 것에 동의하는 것입니다.
+#### 메시지 전송
+
+```tsx
+// 텍스트 메시지 전송 (음성 대신 텍스트 입력)
+await conversation.sendUserMessage("안녕하세요");
+```
+
+#### 마이크 제어
+
+```tsx
+// 음소거
+await conversation.setMicMuted(true);
+
+// 음소거 해제
+await conversation.setMicMuted(false);
+
+// 현재 상태는 conversation.micMuted 로 확인
+```
+
+#### 볼륨 제어
+
+```tsx
+// Agent 음성 볼륨 설정 (0.0 ~ 1.0)
+conversation.setVolume({ volume: 0.5 });
+```
+
+#### 오디오 모니터링
+
+```tsx
+// 입출력 볼륨 (0.0 ~ 1.0)
+const inputVol = conversation.getInputVolume();
+const outputVol = conversation.getOutputVolume();
+
+// Frequency data (Uint8Array, 시각화용)
+const inputFreq = conversation.getInputByteFrequencyData();
+const outputFreq = conversation.getOutputByteFrequencyData();
+```
+
+#### 디바이스 전환
+
+```tsx
+// 입력 디바이스 변경
+await conversation.changeInputDevice({ inputDeviceId: "device-id" });
+
+// 출력 디바이스 변경
+await conversation.changeOutputDevice({ outputDeviceId: "device-id" });
+```
+
+디바이스 목록은 [`navigator.mediaDevices.enumerateDevices()`](https://developer.mozilla.org/docs/Web/API/MediaDevices/enumerateDevices)로 조회.
+
+## Dynamic Variables / Metadata
+
+```tsx
+const conversationId = await conversation.startSession({
+  agentId: "YOUR_AGENT_ID",
+  apiKey: "YOUR_API_KEY",
+  agentVersion: "production",
+  dynamicVariables: {
+    userName: "홍길동",
+    userType: "premium",
+    accountBalance: 50000,
+  },
+  metadata: {
+    sessionId: "sess_abc123",
+    source: "mobile-app",
+  },
+});
+```
+
+- `dynamicVariables` — Agent prompt에서 `{{userName}}` 형식으로 참조
+- `metadata` — Outbound webhook과 call log에 포함
+
+## Export 타입
+
+```ts
+import type {
+  ConversationMessage,
+  ConversationMode,
+  ConversationSource,
+  ConversationStatus,
+  InputDeviceConfig,
+  OutputDeviceConfig,
+  SetVolumeParams,
+  StartConversationOptions,
+  UseConversationOptions,
+} from "@vox-ai/react";
+```
+
+## JS SDK와의 관계
+
+| JS SDK (`@vox-ai/client`) | React SDK (`@vox-ai/react`) |
+|---------------------------|----------------------------|
+| `Conversation.startSession(opts)` | `conversation.startSession(opts)` |
+| `getStatus()` | `status` (React state) |
+| `getMode()` | `isSpeaking` (React state) |
+| `getMicMuted()` | `micMuted` (React state) |
+| 나머지 method/callback | 동일 |
+
+## 참고
+
+- `useVoxAI`는 deprecated — `useConversation` 사용 권장
+- 인증은 `apiKey` 직접 전달 방식
+- 내부 연결은 LiveKit WebRTC 기반
+- 브라우저별 audio device 제약이 있을 수 있음

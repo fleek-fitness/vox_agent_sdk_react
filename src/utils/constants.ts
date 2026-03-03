@@ -1,4 +1,2 @@
-// export const HTTPS_API_ORIGIN = "https://frontend-dev.tryvox.co/api/agent/sdk";
-export const HTTPS_API_ORIGIN = "https://www.tryvox.co/api/agent/sdk";
-// export const HTTPS_API_ORIGIN = "http://localhost:3000/api/agent/sdk";
+export const HTTPS_API_ORIGIN = "https://api.tryvox.co/functions/v1/livekit-token";
 export const SDK_VERSION = "0.5.0";

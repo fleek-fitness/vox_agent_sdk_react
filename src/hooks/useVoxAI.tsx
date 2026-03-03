@@ -565,8 +565,8 @@ export function useVoxAI(options: VoxAIOptions = {}) {
           metadata: {
             runtime_context: {
               source: {
-                type: "react-sdk",
-                version: SDK_VERSION,
+                type: "unknown",
+                version: "unknown",
               },
             },
             call_web: {
