@@ -21,7 +21,9 @@ type HookCallbacks = Pick<
   | "onModeChange"
 >;
 
-export type UseConversationOptions = HookCallbacks;
+export type UseConversationOptions = HookCallbacks & {
+  textOnly?: boolean;
+};
 
 export type StartConversationOptions = Omit<
   StartSessionOptions,
@@ -30,10 +32,12 @@ export type StartConversationOptions = Omit<
 
 export function useConversation(options: UseConversationOptions = {}) {
   const conversationRef = useRef<Conversation | null>(null);
+  const messageMapRef = useRef<Map<string, ConversationMessage>>(new Map());
 
   const [status, setStatus] = useState<ConversationStatus>("disconnected");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [micMuted, setMicMutedState] = useState(false);
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
 
   const startSession = useCallback(
     async (params: StartConversationOptions): Promise<string> => {
@@ -42,8 +46,12 @@ export function useConversation(options: UseConversationOptions = {}) {
         conversationRef.current = null;
       }
 
+      messageMapRef.current = new Map();
+      setMessages([]);
+
       const conversation = await Conversation.startSession({
         ...params,
+        textOnly: params.textOnly ?? options.textOnly,
         onConnect: () => {
           setStatus("connected");
           options.onConnect?.();
@@ -57,6 +65,12 @@ export function useConversation(options: UseConversationOptions = {}) {
           options.onError?.(error);
         },
         onMessage: (message) => {
+          messageMapRef.current.set(message.id, message);
+          setMessages(
+            Array.from(messageMapRef.current.values()).sort(
+              (a, b) => a.timestamp - b.timestamp,
+            ),
+          );
           options.onMessage?.(message);
         },
         onStatusChange: (nextStatus) => {
@@ -91,6 +105,10 @@ export function useConversation(options: UseConversationOptions = {}) {
     return conversationRef.current?.getId();
   }, []);
 
+  const getMessages = useCallback(() => {
+    return conversationRef.current?.getMessages() ?? messages;
+  }, [messages]);
+
   const setVolume = useCallback((volume: { volume: number }) => {
     conversationRef.current?.setVolume(volume);
   }, []);
@@ -98,7 +116,7 @@ export function useConversation(options: UseConversationOptions = {}) {
   const setMicMuted = useCallback(async (isMuted: boolean) => {
     if (!conversationRef.current) return;
     await conversationRef.current.setMicMuted(isMuted);
-    setMicMutedState(isMuted);
+    setMicMutedState(conversationRef.current.getMicMuted());
   }, []);
 
   const sendUserMessage = useCallback(async (text: string) => {
@@ -137,6 +155,7 @@ export function useConversation(options: UseConversationOptions = {}) {
       startSession,
       endSession,
       getId,
+      getMessages,
       setVolume,
       setMicMuted,
       sendUserMessage,
@@ -146,6 +165,7 @@ export function useConversation(options: UseConversationOptions = {}) {
       getOutputVolume,
       getInputByteFrequencyData,
       getOutputByteFrequencyData,
+      messages,
       status,
       isSpeaking,
       micMuted,
@@ -154,6 +174,7 @@ export function useConversation(options: UseConversationOptions = {}) {
       startSession,
       endSession,
       getId,
+      getMessages,
       setVolume,
       setMicMuted,
       sendUserMessage,
@@ -163,6 +184,7 @@ export function useConversation(options: UseConversationOptions = {}) {
       getOutputVolume,
       getInputByteFrequencyData,
       getOutputByteFrequencyData,
+      messages,
       status,
       isSpeaking,
       micMuted,

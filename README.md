@@ -64,6 +64,12 @@ export function VoiceWidget() {
 | `onMessage` | `(message: ConversationMessage) => void` | 메시지 수신 (user transcription, agent response) |
 | `onError` | `(error: Error) => void` | 에러 발생 |
 
+### Hook 옵션
+
+| 옵션 | 타입 | 설명 |
+|------|------|------|
+| `textOnly` | `boolean` | Text-only session 기본값. `true`면 microphone/audio 없이 chat mode로 연결 |
+
 ### React State
 
 | State | 타입 | 설명 |
@@ -71,6 +77,7 @@ export function VoiceWidget() {
 | `status` | `ConversationStatus` | `"disconnected"` \| `"connecting"` \| `"connected"` |
 | `isSpeaking` | `boolean` | Agent가 현재 발화 중인지 여부 |
 | `micMuted` | `boolean` | 마이크 음소거 상태 |
+| `messages` | `ConversationMessage[]` | 현재 세션에서 주고받은 메시지 배열 |
 
 > JS SDK의 `getStatus()`, `getMode()`, `getMicMuted()`에 대응. React에서는 state로 제공되므로 자동 re-render.
 
@@ -90,6 +97,9 @@ await conversation.endSession();
 
 // 세션 ID 조회
 const id = conversation.getId();
+
+// 현재 세션 메시지 조회
+const messages = conversation.getMessages();
 ```
 
 #### `startSession` 옵션
@@ -99,6 +109,7 @@ const id = conversation.getId();
 | `agentId` | `string` | O | Agent ID |
 | `apiKey` | `string` | O | API key |
 | `agentVersion` | `string` | | Agent version (`"current"`, `"production"`, `"v1"` 등, default: `"current"`) |
+| `textOnly` | `boolean` | | Hook 기본값을 override하는 per-session text-only 설정 |
 | `dynamicVariables` | `Record<string, string \| number \| boolean>` | | Agent prompt에 주입할 dynamic variables |
 | `metadata` | `Record<string, unknown>` | | Call metadata (webhook, call log에 포함) |
 
@@ -108,6 +119,19 @@ const id = conversation.getId();
 // 텍스트 메시지 전송 (음성 대신 텍스트 입력)
 await conversation.sendUserMessage("안녕하세요");
 ```
+
+#### 메시지 히스토리
+
+```tsx
+conversation.messages.forEach((message) => {
+  console.log(message.source, message.text, message.isFinal);
+});
+
+const snapshot = conversation.getMessages();
+```
+
+- `messages`는 React state라서 메시지 갱신 시 자동 re-render
+- `getMessages()`는 현재 시점의 메시지 배열 snapshot 반환
 
 #### 마이크 제어
 
@@ -174,6 +198,25 @@ const conversationId = await conversation.startSession({
 - `dynamicVariables` — Agent prompt에서 `{{userName}}` 형식으로 참조
 - `metadata` — Outbound webhook과 call log에 포함
 
+## Text Only
+
+```tsx
+const conversation = useConversation({
+  textOnly: true,
+});
+
+await conversation.startSession({
+  agentId: "YOUR_AGENT_ID",
+  apiKey: "YOUR_API_KEY",
+});
+
+await conversation.sendUserMessage("텍스트로만 테스트할게요");
+```
+
+- text-only session은 microphone 권한을 요청하지 않음
+- 에이전트 응답은 LiveKit text stream으로 수신됨
+- audio 전용 API는 안전한 no-op 또는 zero-value를 반환
+
 ## Export 타입
 
 ```ts
@@ -195,6 +238,7 @@ import type {
 | JS SDK (`@vox-ai/client`) | React SDK (`@vox-ai/react`) |
 |---------------------------|----------------------------|
 | `Conversation.startSession(opts)` | `conversation.startSession(opts)` |
+| `getMessages()` | `messages` / `getMessages()` |
 | `getStatus()` | `status` (React state) |
 | `getMode()` | `isSpeaking` (React state) |
 | `getMicMuted()` | `micMuted` (React state) |
